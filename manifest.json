@@ -1,1 +1,20 @@
-[]
+[
+    {
+        "guid": "a61f78e8-dd46-4eda-9c7b-b5db55348d17",
+        "name": "ShadowLibrary",
+        "description": "Browse and stream movies and shows from other Jellyfin instances without copying any file, through .strm entries pointing at a local proxy.\n",
+        "overview": "Library sharing between Jellyfin instances.",
+        "owner": "cassien",
+        "category": "General",
+        "versions": [
+            {
+                "version": "1.0.0.0",
+                "changelog": "First public release.\n",
+                "targetAbi": "10.11.0.0",
+                "sourceUrl": "https://github.com/KassFlute/jellyfin-plugin-shadowlibrary/releases/download/v1.0.0.0/shadowlibrary_1.0.0.0.zip",
+                "checksum": "9bdf404e9a11950c11ac33d13bc261a3",
+                "timestamp": "2026-08-31T19:13:41Z"
+            }
+        ]
+    }
+]
