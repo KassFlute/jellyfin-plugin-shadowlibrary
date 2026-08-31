@@ -38,34 +38,40 @@ jobs:
           dotnet-target: net9.0
           version: ${{ steps.version.outputs.version }}
 
-      - name: Write checksums
+      # JPRM leaves its own sidecars next to the zip, so the assets are staged in a
+      # directory of their own rather than globbed from the build output
+      - name: Stage the release assets
         id: assets
         run: |
           artifact='${{ steps.jprm.outputs.artifact }}'
-          directory="$(dirname "${artifact}")"
           filename="$(basename "${artifact}")"
-          cd "${directory}"
+          mkdir -p release-assets
+          cp "${artifact}" release-assets/
+          cd release-assets
           md5sum "${filename}" > "${filename}.md5"
           sha256sum "${filename}" > "${filename}.sha256"
-          echo "directory=${directory}" >> "$GITHUB_OUTPUT"
           echo "filename=${filename}" >> "$GITHUB_OUTPUT"
 
       - name: Attach assets to the release
         uses: shogo82148/actions-upload-release-asset@v1
         with:
           upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ${{ steps.assets.outputs.directory }}/*
+          asset_path: ./release-assets/*
 
       # the manifest is what a Jellyfin server reads, so it has to point at the release asset
       # that was just published rather than at anything inside this repository
       - name: Add the release to the plugin repository manifest
         run: |
           python3 -m pip install --upgrade jprm
+          # the build writes the released version into Directory.Build.props, so the tree is
+          # dirty here and the branch switch has to start from a clean one
+          git checkout -- .
           git fetch origin main
           git checkout main
+          # the path needs its directory component, jprm rejects a bare file name
           jprm --verbosity=debug repo add \
             --plugin-url='https://github.com/${{ github.repository }}/releases/download/${{ github.event.release.tag_name }}/${{ steps.assets.outputs.filename }}' \
-            manifest.json \
+            ./manifest.json \
             '${{ steps.jprm.outputs.artifact }}'
 
       - name: Commit the manifest
