@@ -1,0 +1,16 @@
+---
+name: "ShadowLibrary"
+guid: "a61f78e8-dd46-4eda-9c7b-b5db55348d17"
+version: "1.0.0.0"
+targetAbi: "10.11.0.0"
+framework: "net9.0"
+owner: "cassien"
+overview: "Library sharing between Jellyfin instances."
+description: >
+  Browse and stream movies and shows from other Jellyfin instances without
+  copying any file, through .strm entries pointing at a local proxy.
+category: "General"
+artifacts:
+  - "Jellyfin.Plugin.ShadowLibrary.dll"
+changelog: |
+  First public release.

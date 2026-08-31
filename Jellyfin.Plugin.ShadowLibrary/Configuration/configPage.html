@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>ShadowLibrary</title>
+</head>
+<body>
+<div id="ShadowLibraryConfigPage" data-role="page" class="page type-interior pluginConfigurationPage"
+     data-require="emby-input,emby-button,emby-checkbox,emby-select">
+    <style>
+        .slBackdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, .6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            padding: 1em;
+        }
+        .slDialog {
+            background: #202020;
+            color: #fff;
+            border-radius: .4em;
+            padding: 1.4em;
+            width: 100%;
+            max-width: 34em;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 .5em 2em rgba(0, 0, 0, .6);
+        }
+        .slTable { width: 100%; border-collapse: collapse; }
+        .slTable th { text-align: left; padding: .4em .8em .4em 0; font-weight: 600; }
+        .slTable td { padding: .5em .8em .5em 0; }
+        .slTable tr + tr td { border-top: 1px solid rgba(255, 255, 255, .12); }
+        .slActions { display: flex; gap: .6em; margin-top: 1.4em; }
+        .slActions .emby-button { margin: 0; }
+        .slStatus { margin: .8em 0; min-height: 1.2em; }
+    </style>
+
+    <div data-role="content">
+        <div class="content-primary">
+
+            <div class="verticalSection">
+                <div class="sectionTitleContainer flex align-items-center">
+                    <h2 class="sectionTitle">Friend servers</h2>
+                </div>
+
+                <div id="SlServerList"></div>
+
+                <button is="emby-button" type="button" id="SlAddButton"
+                        class="raised block emby-button" style="margin-top:1em;">
+                    <span>Add a friend server</span>
+                </button>
+            </div>
+
+            <form id="SlGeneralForm" class="verticalSection">
+                <div class="sectionTitleContainer flex align-items-center">
+                    <h2 class="sectionTitle">Settings</h2>
+                </div>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="SlMediaRootPath">
+                        Root folder for imported media
+                    </label>
+                    <input id="SlMediaRootPath" type="text" is="emby-input" />
+                    <div class="fieldDescription">
+                        Must be writable by the user running Jellyfin.
+                    </div>
+                </div>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="SlThreshold">
+                        Remove unreachable items after (hours)
+                    </label>
+                    <input id="SlThreshold" type="number" is="emby-input" min="1" step="1" />
+                </div>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="SlLocalApiUrl">
+                        Address players use to reach this server
+                    </label>
+                    <input id="SlLocalApiUrl" type="text" is="emby-input"
+                           placeholder="https://jellyfin.example.org" />
+                    <div class="fieldDescription" id="SlLocalApiUrlHint"></div>
+                </div>
+
+                <button is="emby-button" type="submit" class="raised button-submit block emby-button">
+                    <span>Save</span>
+                </button>
+            </form>
+
+        </div>
+    </div>
+
+    <div id="SlBackdrop" class="slBackdrop hide">
+        <div class="slDialog">
+            <h2 id="SlDialogTitle" style="margin-top:0;">Add a friend server</h2>
+
+            <form id="SlEditorForm">
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="SlName">Display name</label>
+                    <input id="SlName" type="text" is="emby-input" required />
+                </div>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="SlUrl">Server URL</label>
+                    <input id="SlUrl" type="text" is="emby-input" required
+                           placeholder="https://jellyfin.example.org" />
+                </div>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="SlUsername">Username</label>
+                    <input id="SlUsername" type="text" is="emby-input" required autocomplete="off" />
+                </div>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="SlPassword">Password</label>
+                    <input id="SlPassword" type="password" is="emby-input" autocomplete="new-password" />
+                    <div class="fieldDescription" id="SlPasswordHint">
+                        Stored encrypted, never shown again.
+                    </div>
+                </div>
+
+                <div class="slStatus fieldDescription" id="SlStatus"></div>
+
+                <div id="SlLibrarySection" class="hide inputContainer">
+                    <label class="inputLabel inputLabelUnfocused">Libraries</label>
+                    <label class="emby-checkbox-label" style="display:block;">
+                        <input id="SlSyncAll" type="checkbox" is="emby-checkbox" />
+                        <span>Synchronise all of them</span>
+                    </label>
+                    <div id="SlLibraryList" style="margin-top:.6em;"></div>
+                </div>
+
+                <div class="selectContainer">
+                    <label class="selectLabel" for="SlMovieLibrary">Add its movies to</label>
+                    <select id="SlMovieLibrary" is="emby-select"></select>
+                </div>
+
+                <div class="selectContainer">
+                    <label class="selectLabel" for="SlShowLibrary">Add its shows to</label>
+                    <select id="SlShowLibrary" is="emby-select"></select>
+                    <div class="fieldDescription">
+                        Imported media lands in the libraries you already have, beside your own
+                        files. The origin tag tells them apart.
+                    </div>
+                </div>
+
+                <label class="emby-checkbox-label" style="display:block;margin-top:.8em;">
+                    <input id="SlEnabled" type="checkbox" is="emby-checkbox" />
+                    <span>Enabled</span>
+                </label>
+
+                <div class="slActions">
+                    <button is="emby-button" type="submit" class="raised button-submit emby-button">
+                        <span>Save</span>
+                    </button>
+                    <button is="emby-button" type="button" id="SlCancelButton" class="raised emby-button">
+                        <span>Cancel</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script type="text/javascript">
+        (function () {
+            var pluginId = 'a61f78e8-dd46-4eda-9c7b-b5db55348d17';
+            var page = document.querySelector('#ShadowLibraryConfigPage');
+
+            var servers = [];
+            var editingId = null;
+            var editingHasPassword = false;
+            var knownLibraries = [];
+            var editingLibraryIds = [];
+            var localLibraries = [];
+            var lastProbe = null;
+            var probing = false;
+
+            function $(id) {
+                return page.querySelector('#' + id);
+            }
+
+            function show(el, visible) {
+                el.classList.toggle('hide', !visible);
+            }
+
+            function describeError(error) {
+                if (!error) {
+                    return 'unknown error';
+                }
+                return error.statusText || error.message || String(error);
+            }
+
+            function describeServer(response) {
+                if (!response.Success) {
+                    return response.Message;
+                }
+
+                var parts = [];
+                if (response.ServerName) {
+                    parts.push(response.ServerName);
+                }
+                if (response.ServerVersion) {
+                    parts.push('Jellyfin ' + response.ServerVersion);
+                }
+                if (response.RemotePluginVersion) {
+                    parts.push('ShadowLibrary ' + response.RemotePluginVersion);
+                }
+
+                return parts.length
+                    ? parts.join(', ') + '. ' + response.Message
+                    : response.Message;
+            }
+
+            function modeLabel(mode) {
+                var m = String(mode).toLowerCase();
+                if (m === '2' || m === 'federated') {
+                    return 'federated';
+                }
+                if (m === '1' || m === 'standard') {
+                    return 'standard';
+                }
+                return 'unknown';
+            }
+
+            function formatDate(iso) {
+                if (!iso) {
+                    return 'never';
+                }
+                var d = new Date(iso);
+                return isNaN(d.getTime()) ? 'never' : d.toLocaleString();
+            }
+
+            function cell(text) {
+                var td = document.createElement('td');
+                td.textContent = text;
+                return td;
+            }
+
+            function actionButton(label, onClick) {
+                var button = document.createElement('button');
+                button.setAttribute('is', 'emby-button');
+                button.type = 'button';
+                button.className = 'raised emby-button';
+                button.style.margin = '0 .4em 0 0';
+                button.textContent = label;
+                button.addEventListener('click', onClick);
+                return button;
+            }
+
+            function renderList() {
+                var container = $('SlServerList');
+                container.textContent = '';
+
+                if (!servers.length) {
+                    var empty = document.createElement('p');
+                    empty.className = 'fieldDescription';
+                    empty.textContent = 'None yet.';
+                    container.appendChild(empty);
+                    return;
+                }
+
+                var table = document.createElement('table');
+                table.className = 'slTable';
+
+                var head = document.createElement('tr');
+                ['Name', 'URL', 'Account', 'Mode', 'Last contact', ''].forEach(function (label) {
+                    var th = document.createElement('th');
+                    th.textContent = label;
+                    head.appendChild(th);
+                });
+                table.appendChild(head);
+
+                servers.forEach(function (server) {
+                    var row = document.createElement('tr');
+                    row.appendChild(cell(server.Name + (server.Enabled ? '' : ' (disabled)')));
+                    row.appendChild(cell(server.Url));
+                    row.appendChild(cell(server.Username));
+                    row.appendChild(cell(modeLabel(server.LastKnownMode)));
+                    row.appendChild(cell(formatDate(server.LastContactUtc)));
+
+                    var actions = document.createElement('td');
+                    actions.appendChild(actionButton('Edit', function () { openEditor(server); }));
+                    actions.appendChild(actionButton('Remove', function () { deleteServer(server); }));
+                    row.appendChild(actions);
+
+                    table.appendChild(row);
+                });
+
+                container.appendChild(table);
+            }
+
+            function renderLibraries(selectedIds) {
+                var list = $('SlLibraryList');
+                list.textContent = '';
+
+                if (!knownLibraries.length) {
+                    show($('SlLibrarySection'), false);
+                    return;
+                }
+
+                knownLibraries.forEach(function (library) {
+                    var label = document.createElement('label');
+                    label.className = 'emby-checkbox-label';
+                    label.style.display = 'block';
+
+                    var input = document.createElement('input');
+                    input.type = 'checkbox';
+                    input.setAttribute('is', 'emby-checkbox');
+                    input.value = library.Id;
+                    input.className = 'slLibraryCheckbox';
+                    input.checked = selectedIds.indexOf(library.Id) !== -1;
+                    input.disabled = !library.IsSupported;
+
+                    var span = document.createElement('span');
+                    span.textContent = library.IsSupported
+                        ? library.Name
+                        : library.Name + ' (not a movie or show library)';
+
+                    label.appendChild(input);
+                    label.appendChild(span);
+                    list.appendChild(label);
+                });
+
+                show($('SlLibrarySection'), true);
+                applySyncAll();
+            }
+
+            function applySyncAll() {
+                var all = $('SlSyncAll').checked;
+                Array.prototype.forEach.call(
+                    page.querySelectorAll('.slLibraryCheckbox'),
+                    function (input) { input.parentElement.style.opacity = all ? '.4' : '1'; });
+                $('SlLibraryList').style.pointerEvents = all ? 'none' : 'auto';
+            }
+
+            function selectedLibraryIds() {
+                return Array.prototype.map.call(
+                    page.querySelectorAll('.slLibraryCheckbox:checked'),
+                    function (input) { return input.value; });
+            }
+
+            // the checkboxes only exist once a connection test has returned the libraries of
+            // the friend server, so until then the saved selection is the only thing to go on.
+            // Reading the empty list instead would show every box unchecked and wipe the
+            // selection on the next save.
+            function currentLibraryIds() {
+                return page.querySelectorAll('.slLibraryCheckbox').length
+                    ? selectedLibraryIds()
+                    : editingLibraryIds;
+            }
+
+            function loadLocalLibraries() {
+                return ApiClient.getJSON(ApiClient.getUrl('ShadowLibrary/FriendServers/Libraries'))
+                    .then(function (result) {
+                        localLibraries = result || [];
+                    });
+            }
+
+            function fillLibrarySelect(id, collectionType, selected) {
+                var select = $(id);
+                select.textContent = '';
+
+                var none = document.createElement('option');
+                none.value = '';
+                none.textContent = 'Do not add';
+                select.appendChild(none);
+
+                var matching = localLibraries.filter(function (library) {
+                    return library.CollectionType === collectionType;
+                });
+
+                matching.forEach(function (library) {
+                    var option = document.createElement('option');
+                    option.value = library.Name;
+                    option.textContent = library.Name;
+                    select.appendChild(option);
+                });
+
+                if (selected) {
+                    select.value = selected;
+                } else if (matching.length === 1) {
+                    select.value = matching[0].Name;
+                }
+            }
+
+            var baseUrlSources = {
+                override: 'the address set here',
+                published: 'the published address of your Jellyfin network settings',
+                startup: 'the published address this server was started with',
+                request: 'the address you are reaching this page through',
+                local: 'the local network address of this server'
+            };
+
+            function loadStreamBaseUrl() {
+                return ApiClient.ajax({
+                    type: 'POST',
+                    url: ApiClient.getUrl('ShadowLibrary/FriendServers/StreamBaseUrl'),
+                    dataType: 'json'
+                }).then(function (result) {
+                    if (result.Adopted) {
+                        $('SlLocalApiUrl').value = result.Effective;
+                    }
+
+                    var hint = 'Playback can be handed straight to the player, so this has to be '
+                        + 'an address your players can reach, not only this server. ';
+
+                    hint += result.Adopted
+                        ? 'Filled in with ' + result.Effective
+                            + ', the address you are reaching this page through. Change it if your '
+                            + 'players connect through another one.'
+                        : 'Generated files point at ' + result.Effective + ', from '
+                            + (baseUrlSources[result.Source] || 'this server') + '.';
+
+                    $('SlLocalApiUrlHint').textContent = hint;
+                }, function () {
+                    $('SlLocalApiUrlHint').textContent =
+                        'Playback can be handed straight to the player, so this has to be an address '
+                        + 'your players can reach, not only this server.';
+                });
+            }
+
+            function loadServers() {
+                return ApiClient.getJSON(ApiClient.getUrl('ShadowLibrary/FriendServers'))
+                    .then(function (result) {
+                        servers = result || [];
+                        renderList();
+                    });
+            }
+
+            function probe() {
+                var url = $('SlUrl').value.trim();
+                var username = $('SlUsername').value.trim();
+                var password = $('SlPassword').value;
+
+                if (!url || !username || (!password && !editingHasPassword)) {
+                    return;
+                }
+
+                var signature = url + '\n' + username + '\n' + (password ? password : '*stored*');
+                if (probing || signature === lastProbe) {
+                    return;
+                }
+
+                lastProbe = signature;
+                probing = true;
+                $('SlStatus').textContent = 'Checking...';
+
+                ApiClient.ajax({
+                    type: 'POST',
+                    url: ApiClient.getUrl('ShadowLibrary/FriendServers/Test'),
+                    data: JSON.stringify({
+                        Id: editingId,
+                        Url: url,
+                        Username: username,
+                        Password: password
+                    }),
+                    contentType: 'application/json',
+                    dataType: 'json'
+                }).then(function (response) {
+                    probing = false;
+                    $('SlStatus').textContent = describeServer(response);
+                    if (response.Success) {
+                        knownLibraries = response.Libraries || [];
+                        renderLibraries(currentLibraryIds());
+                    }
+                }, function (error) {
+                    probing = false;
+                    lastProbe = null;
+                    $('SlStatus').textContent = 'Check failed: ' + describeError(error);
+                });
+            }
+
+            function openEditor(server) {
+                editingId = server ? server.Id : null;
+                editingHasPassword = server ? server.HasPassword : false;
+                knownLibraries = [];
+                editingLibraryIds = server ? (server.LibraryIds || []).slice() : [];
+                lastProbe = null;
+
+                $('SlDialogTitle').textContent = server ? 'Edit ' + server.Name : 'Add a friend server';
+                $('SlName').value = server ? server.Name : '';
+                $('SlUrl').value = server ? server.Url : '';
+                $('SlUsername').value = server ? server.Username : '';
+                $('SlPassword').value = '';
+                $('SlPasswordHint').textContent = editingHasPassword
+                    ? 'Leave empty to keep the stored password.'
+                    : 'Stored encrypted, never shown again.';
+                $('SlEnabled').checked = server ? server.Enabled : true;
+                fillLibrarySelect('SlMovieLibrary', 'movies', server ? server.MovieLibraryName : '');
+                fillLibrarySelect('SlShowLibrary', 'tvshows', server ? server.ShowLibraryName : '');
+                $('SlSyncAll').checked = server ? server.SyncAllLibraries : true;
+                $('SlStatus').textContent = '';
+
+                renderLibraries(editingLibraryIds);
+                show($('SlBackdrop'), true);
+                $('SlName').focus();
+
+                if (server) {
+                    probe();
+                }
+            }
+
+            function closeEditor() {
+                editingId = null;
+                editingHasPassword = false;
+                knownLibraries = [];
+                editingLibraryIds = [];
+                lastProbe = null;
+                show($('SlBackdrop'), false);
+            }
+
+            function saveServer(event) {
+                event.preventDefault();
+
+                var payload = {
+                    Name: $('SlName').value.trim(),
+                    Url: $('SlUrl').value.trim(),
+                    Username: $('SlUsername').value.trim(),
+                    Password: $('SlPassword').value,
+                    Enabled: $('SlEnabled').checked,
+                    SyncAllLibraries: $('SlSyncAll').checked,
+                    LibraryIds: currentLibraryIds(),
+                    MovieLibraryName: $('SlMovieLibrary').value,
+                    ShowLibraryName: $('SlShowLibrary').value
+                };
+
+                var url = editingId
+                    ? ApiClient.getUrl('ShadowLibrary/FriendServers/' + editingId)
+                    : ApiClient.getUrl('ShadowLibrary/FriendServers');
+
+                Dashboard.showLoadingMsg();
+                ApiClient.ajax({
+                    type: 'POST',
+                    url: url,
+                    data: JSON.stringify(payload),
+                    contentType: 'application/json',
+                    dataType: 'json'
+                }).then(function () {
+                    closeEditor();
+                    return loadServers();
+                }).then(function () {
+                    Dashboard.hideLoadingMsg();
+                }, function (error) {
+                    Dashboard.hideLoadingMsg();
+                    Dashboard.alert('Could not save: ' + describeError(error));
+                });
+
+                return false;
+            }
+
+            function deleteServer(server) {
+                if (!window.confirm('Remove ' + server.Name + ' and everything imported from it?')) {
+                    return;
+                }
+
+                Dashboard.showLoadingMsg();
+                ApiClient.ajax({
+                    type: 'DELETE',
+                    url: ApiClient.getUrl('ShadowLibrary/FriendServers/' + server.Id)
+                }).then(function () {
+                    return loadServers();
+                }).then(function () {
+                    Dashboard.hideLoadingMsg();
+                }, function (error) {
+                    Dashboard.hideLoadingMsg();
+                    Dashboard.alert('Could not remove: ' + describeError(error));
+                });
+            }
+
+            page.addEventListener('pageshow', function () {
+                Dashboard.showLoadingMsg();
+                closeEditor();
+
+                ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                    $('SlMediaRootPath').value = config.MediaRootPath;
+                    $('SlThreshold').value = config.UnavailabilityThresholdHours;
+                    $('SlLocalApiUrl').value = config.LocalApiUrl || '';
+                    return loadStreamBaseUrl();
+                }).then(function () {
+                    return loadLocalLibraries();
+                }).then(function () {
+                    return loadServers();
+                }).then(function () {
+                    Dashboard.hideLoadingMsg();
+                }, function () {
+                    Dashboard.hideLoadingMsg();
+                    Dashboard.alert('Could not load the ShadowLibrary configuration.');
+                });
+            });
+
+            $('SlGeneralForm').addEventListener('submit', function (event) {
+                event.preventDefault();
+                Dashboard.showLoadingMsg();
+                ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                    config.MediaRootPath = $('SlMediaRootPath').value.trim();
+                    config.UnavailabilityThresholdHours = parseInt($('SlThreshold').value, 10) || 48;
+                    config.LocalApiUrl = $('SlLocalApiUrl').value.trim();
+                    return ApiClient.updatePluginConfiguration(pluginId, config);
+                }).then(function (result) {
+                    Dashboard.processPluginConfigurationUpdateResult(result);
+                    return loadStreamBaseUrl();
+                });
+
+                return false;
+            });
+
+            $('SlEditorForm').addEventListener('submit', saveServer);
+            $('SlAddButton').addEventListener('click', function () { openEditor(null); });
+            $('SlCancelButton').addEventListener('click', closeEditor);
+            $('SlSyncAll').addEventListener('change', applySyncAll);
+
+            ['SlUrl', 'SlUsername', 'SlPassword'].forEach(function (id) {
+                $(id).addEventListener('change', probe);
+            });
+
+            $('SlBackdrop').addEventListener('click', function (event) {
+                if (event.target === $('SlBackdrop')) {
+                    closeEditor();
+                }
+            });
+
+            document.addEventListener('keydown', function (event) {
+                if (event.key === 'Escape' && !$('SlBackdrop').classList.contains('hide')) {
+                    closeEditor();
+                }
+            });
+        })();
+    </script>
+</div>
+</body>
+</html>

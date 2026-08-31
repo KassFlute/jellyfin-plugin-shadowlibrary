@@ -1,0 +1,8 @@
+<Project>
+    <PropertyGroup>
+        <!-- placeholder, the real number comes from build.yaml through the packaging script
+             and the release pipeline. AssemblyVersion and FileVersion are left to default to
+             it, otherwise the shipped assembly would report 0.0.0.0 whatever was published -->
+        <Version>0.0.0.0</Version>
+    </PropertyGroup>
+</Project>
