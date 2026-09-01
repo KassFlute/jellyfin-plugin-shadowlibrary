@@ -5,6 +5,12 @@ updates:
     schedule:
       interval: monthly
     open-pull-requests-limit: 5
+    ignore:
+      # the host loads its own copy, a major bump would compile the plugin against an API
+      # the running server does not have
+      - dependency-name: Microsoft.Data.Sqlite
+        update-types:
+          - version-update:semver-major
   - package-ecosystem: github-actions
     directory: /
     schedule:
