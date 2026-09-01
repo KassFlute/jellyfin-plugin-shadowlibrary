@@ -7,10 +7,10 @@ framework: "net9.0"
 owner: "cassien"
 overview: "Library sharing between Jellyfin instances."
 description: >
-  Browse and stream movies and shows from other Jellyfin instances without
-  copying any file, through .strm entries pointing at a local proxy.
+  Browse and stream movies and shows from other Jellyfin instances without copying any file, through .strm entries pointing at a local proxy.
+
 category: "General"
 artifacts:
   - "Jellyfin.Plugin.ShadowLibrary.dll"
-changelog: |
+changelog: |-
   First public release.

@@ -1,0 +1,19 @@
+name: '🏷️ Sync labels'
+
+on:
+  schedule:
+    - cron: '0 0 1 * *'
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+jobs:
+  labels:
+    name: Apply .github/labels.yml
+    runs-on: ubuntu-latest
+    steps:
+      - uses: EndBug/label-sync@52074158190acb45f3077f9099fea818aa43f97a # v2.3.3
+        with:
+          config-file: .github/labels.yml
+          token: ${{ secrets.GITHUB_TOKEN }}
