@@ -20,15 +20,29 @@ the small types of one exchange in a single file. Each one carries the reason ne
 and so does the release pipeline through JPRM, which injects it into the assembly at build
 time. Nothing in the `.csproj` carries a version.
 
+Both the version and the changelog in that file are written by the release preparation
+workflow, not by hand. `targetAbi` is the exception, bump it yourself when the plugin starts
+needing a newer server.
+
 ## Releasing
 
-1. Bump `version` in `build.yaml` and add the entry to `CHANGELOG.md`.
-2. Commit and push to `main`.
-3. Publish a GitHub release whose tag is the version, for instance `v1.0.0.0`.
+Release Drafter keeps a draft release up to date from the pull requests merged since the last
+one, and opens a `Prepare ShadowLibrary <version>` pull request carrying the same notes in
+`build.yaml`, which is what the plugin catalogue shows, and in `CHANGELOG.md`. Releasing is
+then two steps.
+
+1. Merge the preparation pull request.
+2. Publish the draft release.
 
 The publish workflow builds the plugin, attaches the zip and its checksums to the release,
 adds the version to `manifest.json` and pushes that back to `main`. Servers that added the
 repository see the update on their next check.
+
+Everything here reads merged pull requests, so a commit pushed straight to `main` reaches
+users without ever showing up in a changelog. Their labels decide two things: the version,
+`breaking` for a major and `feature` for a minor, anything else for a patch, and the section
+an entry lands in. `skip-changelog` leaves a pull request out. The label set lives in
+`.github/labels.yml` and the `Sync labels` workflow applies it.
 
 ## Where to look
 
