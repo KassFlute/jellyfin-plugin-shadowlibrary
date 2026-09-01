@@ -1,7 +1,7 @@
 ---
 name: "ShadowLibrary"
 guid: "a61f78e8-dd46-4eda-9c7b-b5db55348d17"
-version: "1.0.0.0"
+version: "1.0.1.0"
 targetAbi: "10.11.0.0"
 framework: "net9.0"
 owner: "cassien"
@@ -13,4 +13,6 @@ category: "General"
 artifacts:
   - "Jellyfin.Plugin.ShadowLibrary.dll"
 changelog: |-
-  First public release.
+  - Check out the repository before syncing the labels (#10) @KassFlute
+  - Take the Dependabot dependency updates (#9) @KassFlute
+  - Draft the release notes from the merged pull requests (#7) @KassFlute

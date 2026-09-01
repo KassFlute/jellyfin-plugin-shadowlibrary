@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.1.0
+
+- Check out the repository before syncing the labels (#10) @KassFlute
+- Take the Dependabot dependency updates (#9) @KassFlute
+- Draft the release notes from the merged pull requests (#7) @KassFlute
+
 ## 1.0.0.0
 
 First public release.
