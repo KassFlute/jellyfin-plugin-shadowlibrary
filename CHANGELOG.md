@@ -8,6 +8,9 @@
 - Fix the stored library choice in the friend server editor (#12) @KassFlute
 - Fix Microsoft.Data.Sqlite failing to load on Jellyfin 10.11.11 (#11) @KassFlute
 
+### CI and repository
+- Drop the empty heading and emoji from the release notes (#15) @KassFlute
+
 ## 1.0.0.0
 
 First public release.
