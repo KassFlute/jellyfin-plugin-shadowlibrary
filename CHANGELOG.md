@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.1.0
+
+### Bug fixes
+- Fix slow playback starts and link saturation through the relay (#14) @KassFlute
+- Fix network saturation during the library scan (#13) @KassFlute
+- Fix the stored library choice in the friend server editor (#12) @KassFlute
+- Fix Microsoft.Data.Sqlite failing to load on Jellyfin 10.11.11 (#11) @KassFlute
+
 ## 1.0.0.0
 
 First public release.
