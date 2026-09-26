@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Net;
 using System.Security.Cryptography;
@@ -32,6 +33,7 @@ public class StreamController : ControllerBase
     private readonly FriendServerClient _client;
     private readonly FriendServerSessionProvider _sessions;
     private readonly ImportedItemStore _store;
+    private readonly PlaybackTargetCache _targets;
     private readonly ILogger<StreamController> _logger;
 
     /// <summary>
@@ -40,16 +42,19 @@ public class StreamController : ControllerBase
     /// <param name="client">Friend server client.</param>
     /// <param name="sessions">Session provider.</param>
     /// <param name="store">Imported item store.</param>
+    /// <param name="targets">Sources already resolved for recent relays.</param>
     /// <param name="logger">Logger.</param>
     public StreamController(
         FriendServerClient client,
         FriendServerSessionProvider sessions,
         ImportedItemStore store,
+        PlaybackTargetCache targets,
         ILogger<StreamController> logger)
     {
         _client = client;
         _sessions = sessions;
         _store = store;
+        _targets = targets;
         _logger = logger;
     }
 
@@ -103,6 +108,130 @@ public class StreamController : ControllerBase
             return Unreachable(server.Name, "could not be authenticated against");
         }
 
+        var range = Request.Headers.Range.ToString();
+        var headOnly = HttpMethods.IsHead(Request.Method);
+        var started = Stopwatch.GetTimestamp();
+
+        var cached = _targets.TryGet(itemId, out var target);
+        if (!cached)
+        {
+            var resolved = await ResolveAsync(server, session, item, cancellationToken).ConfigureAwait(false);
+            if (resolved.Error is not null)
+            {
+                return resolved.Error;
+            }
+
+            (session, target) = (resolved.Session, resolved.Target);
+            _targets.Set(itemId, target);
+        }
+
+        var infoElapsed = Stopwatch.GetElapsedTime(started);
+
+        var upstream = await OpenAsync(server, session, item, target, range, headOnly, cancellationToken).ConfigureAwait(false);
+        if (upstream is not null && !upstream.IsSuccessStatusCode && cached)
+        {
+            // the friend server may have dropped the play session or the token, start over once
+            _logger.LogInformation(
+                "[ShadowLibrary] {Server} answered {Status} to a cached source of {RemoteId}, asking again.",
+                server.Name,
+                (int)upstream.StatusCode,
+                item.RemoteItemId);
+            upstream.Dispose();
+            _targets.Remove(itemId);
+            cached = false;
+
+            var resolved = await ResolveAsync(server, session, item, cancellationToken).ConfigureAwait(false);
+            if (resolved.Error is not null)
+            {
+                return resolved.Error;
+            }
+
+            (session, target) = (resolved.Session, resolved.Target);
+            _targets.Set(itemId, target);
+            infoElapsed = Stopwatch.GetElapsedTime(started);
+
+            upstream = await OpenAsync(server, session, item, target, range, headOnly, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (upstream is null)
+        {
+            return Unreachable(server.Name, "is unreachable");
+        }
+
+        using (upstream)
+        {
+            if (!upstream.IsSuccessStatusCode)
+            {
+                _targets.Remove(itemId);
+                _logger.LogWarning(
+                    "[ShadowLibrary] {Server} answered {Status} when asked for the media of {RemoteId}.",
+                    server.Name,
+                    (int)upstream.StatusCode,
+                    item.RemoteItemId);
+                return Unreachable(server.Name, "answered " + (int)upstream.StatusCode + " to the media request");
+            }
+
+            var headersElapsed = Stopwatch.GetElapsedTime(started) - infoElapsed;
+
+            _logger.LogInformation(
+                "[ShadowLibrary] Relaying {RemoteId} from {Server}. Upstream answered {Status}, range {Range}, length {Length}. Playback info {Info:l}, headers {HeadersMs} ms.",
+                item.RemoteItemId,
+                server.Name,
+                (int)upstream.StatusCode,
+                string.IsNullOrEmpty(range) ? "none" : range,
+                upstream.Content.Headers.ContentLength?.ToString(CultureInfo.InvariantCulture) ?? "unknown",
+                cached ? "cached" : ((long)infoElapsed.TotalMilliseconds).ToString(CultureInfo.InvariantCulture) + " ms",
+                (long)headersElapsed.TotalMilliseconds);
+
+            Response.StatusCode = (int)upstream.StatusCode;
+            RelayHeaders(upstream);
+
+            if (headOnly)
+            {
+                return new EmptyResult();
+            }
+
+            long relayed = 0;
+            var bodyStarted = Stopwatch.GetTimestamp();
+            try
+            {
+                var body = await upstream.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+                await using (body.ConfigureAwait(false))
+                {
+                    var buffer = new byte[81920];
+                    int read;
+                    while ((read = await body.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
+                    {
+                        await Response.Body.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+                        relayed += read;
+                    }
+                }
+            }
+            catch (Exception ex) when (ex is OperationCanceledException or IOException)
+            {
+                // the player seeked away or closed, nothing to report
+                _logger.LogDebug(ex, "[ShadowLibrary] Relay of {RemoteId} ended early.", item.RemoteItemId);
+            }
+
+            _logger.LogInformation(
+                "[ShadowLibrary] Relay of {RemoteId} closed after {Bytes} bytes in {Seconds:0.0} s.",
+                item.RemoteItemId,
+                relayed,
+                Stopwatch.GetElapsedTime(bodyStarted).TotalSeconds);
+
+            return new EmptyResult();
+        }
+    }
+
+    /// <summary>
+    /// Asks the friend server which source to read and opens a play session for it.
+    /// </summary>
+    private async Task<(ActionResult? Error, FriendServerSession Session, PlaybackTarget Target)> ResolveAsync(
+        FriendServer server,
+        FriendServerSession session,
+        ImportedItem item,
+        CancellationToken cancellationToken)
+    {
         PlaybackInfoResponse? info;
         try
         {
@@ -117,12 +246,13 @@ public class StreamController : ControllerBase
             if (status == HttpStatusCode.Unauthorized)
             {
                 // the stored token was revoked or expired, one retry with a fresh session
-                session = await _sessions.GetAsync(server, true, cancellationToken).ConfigureAwait(false);
-                if (session is null)
+                var refreshed = await _sessions.GetAsync(server, true, cancellationToken).ConfigureAwait(false);
+                if (refreshed is null)
                 {
-                    return Unreachable(server.Name, "refused the service account");
+                    return (Unreachable(server.Name, "refused the service account"), session, default);
                 }
 
+                session = refreshed;
                 (status, payload) = await _client.GetPlaybackInfoAsync(
                     session.Url,
                     session.AccessToken,
@@ -135,12 +265,12 @@ public class StreamController : ControllerBase
             if (status == HttpStatusCode.NotFound)
             {
                 _logger.LogInformation("[ShadowLibrary] {Server} no longer holds item {RemoteId}.", server.Name, item.RemoteItemId);
-                return StatusCode(StatusCodes.Status410Gone, "The friend server no longer holds this item.");
+                return (StatusCode(StatusCodes.Status410Gone, "The friend server no longer holds this item."), session, default);
             }
 
             if (payload is null)
             {
-                return Unreachable(server.Name, "answered " + (int)status + " to the playback request");
+                return (Unreachable(server.Name, "answered " + (int)status + " to the playback request"), session, default);
             }
 
             info = payload;
@@ -148,81 +278,45 @@ public class StreamController : ControllerBase
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
         {
             _logger.LogWarning(ex, "[ShadowLibrary] Playback request to {Server} failed.", server.Name);
-            return Unreachable(server.Name, "is unreachable");
+            return (Unreachable(server.Name, "is unreachable"), session, default);
         }
 
         var source = Array.Find(info.MediaSources, s => s.SupportsDirectStream) ?? info.MediaSources.FirstOrDefault();
         if (source is null)
         {
             _logger.LogWarning("[ShadowLibrary] {Server} returned no media source for {RemoteId}.", server.Name, item.RemoteItemId);
-            return StatusCode(StatusCodes.Status410Gone, "The friend server returned no playable source for this item.");
+            return (StatusCode(StatusCodes.Status410Gone, "The friend server returned no playable source for this item."), session, default);
         }
 
-        var range = Request.Headers.Range.ToString();
+        return (null, session, new PlaybackTarget(source.Id, info.PlaySessionId));
+    }
 
-        HttpResponseMessage upstream;
+    private async Task<HttpResponseMessage?> OpenAsync(
+        FriendServer server,
+        FriendServerSession session,
+        ImportedItem item,
+        PlaybackTarget target,
+        string range,
+        bool headOnly,
+        CancellationToken cancellationToken)
+    {
         try
         {
-            upstream = await _client.OpenVideoStreamAsync(
+            return await _client.OpenVideoStreamAsync(
                 session.Url,
                 session.AccessToken,
                 session.DeviceId,
                 item.RemoteItemId,
-                source.Id,
-                info.PlaySessionId,
+                target.MediaSourceId,
+                target.PlaySessionId,
                 range,
-                HttpMethods.IsHead(Request.Method),
+                headOnly,
                 cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
         {
             _logger.LogWarning(ex, "[ShadowLibrary] Opening the stream of {RemoteId} on {Server} failed.", item.RemoteItemId, server.Name);
-            return Unreachable(server.Name, "is unreachable");
-        }
-
-        using (upstream)
-        {
-            if (!upstream.IsSuccessStatusCode)
-            {
-                _logger.LogWarning(
-                    "[ShadowLibrary] {Server} answered {Status} when asked for the media of {RemoteId}.",
-                    server.Name,
-                    (int)upstream.StatusCode,
-                    item.RemoteItemId);
-                return Unreachable(server.Name, "answered " + (int)upstream.StatusCode + " to the media request");
-            }
-
-            _logger.LogInformation(
-                "[ShadowLibrary] Relaying {RemoteId} from {Server}. Upstream answered {Status}, range {Range}, length {Length}.",
-                item.RemoteItemId,
-                server.Name,
-                (int)upstream.StatusCode,
-                string.IsNullOrEmpty(range) ? "none" : range,
-                upstream.Content.Headers.ContentLength?.ToString(CultureInfo.InvariantCulture) ?? "unknown");
-
-            Response.StatusCode = (int)upstream.StatusCode;
-            RelayHeaders(upstream);
-
-            if (HttpMethods.IsHead(Request.Method))
-            {
-                return new EmptyResult();
-            }
-
-            try
-            {
-                var body = await upstream.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-                await using (body.ConfigureAwait(false))
-                {
-                    await body.CopyToAsync(Response.Body, cancellationToken).ConfigureAwait(false);
-                }
-            }
-            catch (Exception ex) when (ex is OperationCanceledException or IOException)
-            {
-                // the player seeked away or closed, nothing to report
-                _logger.LogDebug(ex, "[ShadowLibrary] Relay of {RemoteId} ended early.", item.RemoteItemId);
-            }
-
-            return new EmptyResult();
+            return null;
         }
     }
 

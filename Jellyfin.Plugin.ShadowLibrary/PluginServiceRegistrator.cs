@@ -1,3 +1,4 @@
+using Jellyfin.Plugin.ShadowLibrary.Api;
 using Jellyfin.Plugin.ShadowLibrary.Remote;
 using Jellyfin.Plugin.ShadowLibrary.Security;
 using Jellyfin.Plugin.ShadowLibrary.Storage;
@@ -21,6 +22,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
             FriendServerClient.StreamClientName,
             client => client.Timeout = Timeout.InfiniteTimeSpan);
 
+        serviceCollection.AddSingleton<PlaybackTargetCache>();
         serviceCollection.AddSingleton<SecretStore>();
         serviceCollection.AddSingleton<FriendServerClient>();
         serviceCollection.AddSingleton<ImportedItemStore>();

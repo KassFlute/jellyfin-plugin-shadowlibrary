@@ -174,6 +174,12 @@ otherwise have both copies writing to the same generated path.
 `/ShadowLibrary/stream/{id}`, resolves the item in the SQLite store, asks the friend server
 for a fresh playback description, then relays `/Videos/{id}/stream?static=true`.
 
+The chosen source and play session are kept ten minutes per item, in
+[PlaybackTargetCache.cs](Jellyfin.Plugin.ShadowLibrary/Api/PlaybackTargetCache.cs). Starting or
+seeking a playback makes ffmpeg open five or six ranges in a row, and asking for the playback
+description each time added seconds to every start. A cached source the friend server refuses
+is dropped and asked for again once.
+
 `Range` and `HEAD` are passed through untouched, which is what makes seeking work and what
 lets ffprobe inspect the file at playback.
 
