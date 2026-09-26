@@ -15,15 +15,15 @@
 
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
-    <PackageReference Include="Jellyfin.Controller" Version="10.11.11">
+    <PackageReference Include="Jellyfin.Controller" Version="10.11.0">
       <ExcludeAssets>runtime</ExcludeAssets>
     </PackageReference>
-    <PackageReference Include="Jellyfin.Model" Version="10.11.11">
+    <PackageReference Include="Jellyfin.Model" Version="10.11.0">
       <ExcludeAssets>runtime</ExcludeAssets>
     </PackageReference>
-    <!-- provided by the host, compile against it but never ship a second copy. Stays on the
-         9.0.x line, the one Jellyfin 10.11 loads at runtime -->
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.19" ExcludeAssets="runtime" />
+    <!-- provided by the host, compile against it but never ship a second copy. Pinned to
+         what the targetAbi server ships, a newer reference fails to bind on older hosts -->
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.10" ExcludeAssets="runtime" />
   </ItemGroup>
 
   <ItemGroup>
