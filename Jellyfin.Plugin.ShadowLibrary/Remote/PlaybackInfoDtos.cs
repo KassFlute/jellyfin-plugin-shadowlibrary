@@ -30,4 +30,9 @@ public class RemoteMediaSource
     /// Gets or sets a value indicating whether the friend server can serve this source as is.
     /// </summary>
     public bool SupportsDirectStream { get; set; }
+
+    /// <summary>
+    /// Gets or sets the overall bitrate of the file, in bits per second.
+    /// </summary>
+    public int? Bitrate { get; set; }
 }

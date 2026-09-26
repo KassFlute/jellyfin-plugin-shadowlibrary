@@ -27,6 +27,14 @@ namespace Jellyfin.Plugin.ShadowLibrary.Api;
 [Route("ShadowLibrary/stream")]
 public class StreamController : ControllerBase
 {
+    // covers the ranges ffmpeg reads to start a playback, so starts and seeks stay instant
+    private const long BurstBytes = 16L * 1024 * 1024;
+
+    private const double RateFactor = 4;
+
+    // low bitrate files still get a quick refill after a stall
+    private const double MinRateBitsPerSecond = 8_000_000;
+
     private static readonly string[] RelayedHeaders =
         ["Content-Type", "Content-Length", "Content-Range", "Accept-Ranges", "Content-Disposition"];
 
@@ -193,6 +201,7 @@ public class StreamController : ControllerBase
 
             long relayed = 0;
             var bodyStarted = Stopwatch.GetTimestamp();
+            var rate = RateLimit(target.Bitrate);
             try
             {
                 var body = await upstream.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
@@ -204,6 +213,16 @@ public class StreamController : ControllerBase
                     {
                         await Response.Body.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
                         relayed += read;
+
+                        if (rate > 0 && relayed > BurstBytes)
+                        {
+                            // ahead of the allowance, wait until the rate catches up
+                            var allowed = BurstBytes + (rate * Stopwatch.GetElapsedTime(bodyStarted).TotalSeconds);
+                            if (relayed > allowed)
+                            {
+                                await Task.Delay(TimeSpan.FromSeconds((relayed - allowed) / rate), cancellationToken).ConfigureAwait(false);
+                            }
+                        }
                     }
                 }
             }
@@ -214,10 +233,11 @@ public class StreamController : ControllerBase
             }
 
             _logger.LogInformation(
-                "[ShadowLibrary] Relay of {RemoteId} closed after {Bytes} bytes in {Seconds:0.0} s.",
+                "[ShadowLibrary] Relay of {RemoteId} closed after {Bytes} bytes in {Seconds:0.0} s, limit {Limit:l}.",
                 item.RemoteItemId,
                 relayed,
-                Stopwatch.GetElapsedTime(bodyStarted).TotalSeconds);
+                Stopwatch.GetElapsedTime(bodyStarted).TotalSeconds,
+                rate > 0 ? (rate * 8 / 1_000_000).ToString("0.0", CultureInfo.InvariantCulture) + " Mbit/s" : "none");
 
             return new EmptyResult();
         }
@@ -288,7 +308,7 @@ public class StreamController : ControllerBase
             return (StatusCode(StatusCodes.Status410Gone, "The friend server returned no playable source for this item."), session, default);
         }
 
-        return (null, session, new PlaybackTarget(source.Id, info.PlaySessionId));
+        return (null, session, new PlaybackTarget(source.Id, info.PlaySessionId, source.Bitrate));
     }
 
     private async Task<HttpResponseMessage?> OpenAsync(
@@ -318,6 +338,25 @@ public class StreamController : ControllerBase
             _logger.LogWarning(ex, "[ShadowLibrary] Opening the stream of {RemoteId} on {Server} failed.", item.RemoteItemId, server.Name);
             return null;
         }
+    }
+
+    /// <summary>
+    /// Bytes per second a relay may sustain once past its burst, or 0 for no limit.
+    /// </summary>
+    /// <remarks>
+    /// Stream copy makes ffmpeg read the input as fast as the network allows, about fifteen
+    /// times the playback speed on a fast link, and a player in direct play does the same.
+    /// A few times the bitrate keeps them well ahead of playback without holding the link.
+    /// </remarks>
+    private static double RateLimit(int? bitrate)
+    {
+        if (bitrate is not > 0)
+        {
+            // no way to tell what the file needs, starving a 4K remux would be worse
+            return 0;
+        }
+
+        return Math.Max(bitrate.Value * RateFactor, MinRateBitsPerSecond) / 8d;
     }
 
     private static bool IsKeyValid(string? key)

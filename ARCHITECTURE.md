@@ -180,6 +180,12 @@ seeking a playback makes ffmpeg open five or six ranges in a row, and asking for
 description each time added seconds to every start. A cached source the friend server refuses
 is dropped and asked for again once.
 
+Past its first 16 MB, a relay is held to four times the bitrate the friend server reports for
+the file, 8 Mbit/s at least, and left unlimited when no bitrate is known. Stream copy makes
+ffmpeg read its input as fast as the network allows, measured around fifteen times the
+playback speed, and a player in direct play does the same. Unchecked, one playback holds the
+whole link. The burst covers the ranges read to start or seek, so those stay instant.
+
 `Range` and `HEAD` are passed through untouched, which is what makes seeking work and what
 lets ffprobe inspect the file at playback.
 
