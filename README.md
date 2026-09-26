@@ -32,15 +32,13 @@ Requires Jellyfin 10.11.
 
 1. Ask your friend for a user account on their server, with access to the libraries they
    want to share. No admin rights needed.
-2. In Dashboard > Plugins > ShadowLibrary, set the root folder for imported media. Jellyfin
-   must be able to write to it.
+2. In Dashboard > Plugins > ShadowLibrary, set the root folder for imported media. **Jellyfin
+   must be able to write to it**.
 3. Add the friend server, pick its libraries and the libraries of yours its movies and
    shows go into.
-4. In Dashboard > Scheduled Tasks, run **Synchronise friend servers**. It then runs every
-   six hours.
+4. In Dashboard > Scheduled Tasks, run **Synchronise friend servers** for a first scan. It then runs every six hours.
 
-Imported media carries a `ShadowLibrary: <name> (<url>)` tag. Playback needs the friend
-server to be online.
+Imported media carries a `ShadowLibrary: <name> (<url>)` tag to be differentiable in your interface.
 
 ## Documentation
 
