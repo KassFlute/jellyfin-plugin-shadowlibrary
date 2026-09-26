@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   publish:
@@ -74,10 +75,20 @@ jobs:
             ./manifest.json \
             '${{ steps.jprm.outputs.artifact }}'
 
-      - name: Commit the manifest
+      # main only takes pull requests, servers see the version once this one is merged
+      - name: Open the manifest pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
+          branch="publish-${VERSION}"
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git checkout -b "${branch}"
           git add manifest.json
-          git commit -m 'Publish ShadowLibrary ${{ steps.version.outputs.version }}'
-          git push origin main
+          git commit -m "Publish ShadowLibrary ${VERSION}"
+          git push -f origin "${branch}"
+          gh pr create --base main --head "${branch}" \
+            --title "Publish ShadowLibrary ${VERSION}" \
+            --body "Adds ${VERSION} to the plugin repository manifest. Jellyfin servers only see the release once this is merged." \
+            --label release-prep --label skip-changelog
