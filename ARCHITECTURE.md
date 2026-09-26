@@ -23,9 +23,9 @@ friend server                this server                        player
      |                            |  writes .strm .nfo images      |
      |                            |  into <root>/<friend>/...      |
      |                            |                                |
-     |                            |  2. library scan, then         |
-     |                            |     ffprobe through the proxy  |
-     |                            |                                |
+     |  2. library scan, then     |                                |
+     |     tracks of new items    |                                |
+     |<---------------------------|                                |
      |                            |<-------------------------------|  3. play
      |  4. PlaybackInfo           |                                |
      |<---------------------------|                                |
@@ -101,8 +101,8 @@ it in one piece: detach, move, rewrite the stored paths, reattach.
   generated folders as sources of the user's libraries.
 - [MediaFileWriter.cs](Jellyfin.Plugin.ShadowLibrary/Sync/MediaFileWriter.cs), the `.strm`,
   `.nfo`, images, folder naming and metadata hashing.
-- [MediaProbe.cs](Jellyfin.Plugin.ShadowLibrary/Sync/MediaProbe.cs), asks Jellyfin to look
-  inside the generated files.
+- [MediaProbe.cs](Jellyfin.Plugin.ShadowLibrary/Sync/MediaProbe.cs), stores the tracks the
+  friend server already knows, ffprobe only when it knows none.
 - [ImportedMediaCleaner.cs](Jellyfin.Plugin.ShadowLibrary/Sync/ImportedMediaCleaner.cs),
   removal, of one item, of a series, or of everything from one friend server.
 - [ImportedItemStore.cs](Jellyfin.Plugin.ShadowLibrary/Storage/ImportedItemStore.cs), the
@@ -142,7 +142,9 @@ for one friend server:
    queued and the cycle waits on its completion event, so the items exist before the next
    step. Past two hours it gives up and leaves them to the next cycle.
 8. **Match** the written files to the Jellyfin items the scan just created.
-9. **Inspect** the new items, so their audio and subtitle tracks are known.
+9. **Fill in the tracks** of the new items from what the friend server already inspected,
+   fetched 50 items per request. An item the friend server knows no video stream for goes
+   through ffprobe instead, one every five seconds.
 10. **Log** one line with the counters.
 
 When the listing fails, none of that happens. Every item starts or continues an
@@ -173,7 +175,7 @@ otherwise have both copies writing to the same generated path.
 for a fresh playback description, then relays `/Videos/{id}/stream?static=true`.
 
 `Range` and `HEAD` are passed through untouched, which is what makes seeking work and what
-lets ffprobe inspect the file.
+lets ffprobe inspect the file at playback.
 
 The endpoint is anonymous, guarded by a key carried in the `.strm` URL. Depending on the
 playback decision, that URL is fetched by the local media pipeline or handed to the player,
@@ -264,10 +266,19 @@ are from Jellyfin 10.11.0.
 
 **A library scan never looks inside a `.strm`.** `FFProbeVideoInfo.cs` guards the probe with
 `if (!item.IsShortcut || options.EnableRemoteContentProbe)`. Only two callers set that flag,
-Jellyfin itself on the first playback request, and this plugin. That is why
+Jellyfin itself on every playback request of a `.strm` (`MediaSourceManager.cs:175`, whatever
+is already stored), and this plugin. That is why
 [MediaProbe.cs](Jellyfin.Plugin.ShadowLibrary/Sync/MediaProbe.cs) exists.
 
-**That probe needs `FullRefresh`, not a lower mode.** Below it, `MetadataService` keeps only
+**Probing every new item saturates the link.** ffprobe asks for open ended ranges, so each
+file streams at full speed through the relay until ffprobe has read enough, and a first
+scan chains hundreds of them. The friend server has already inspected those files and
+`/Items?Fields=MediaSources,Chapters` returns the same `MediaStream` and `MediaAttachment`
+models ffprobe fills, so `MediaProbe` stores those and writes the item fields the way
+`FFProbeVideoInfo.Fetch` does. External streams are dropped, they are files on the friend
+server disk, and the embedded ones are renumbered from 0 like a local probe would.
+
+**The ffprobe fallback needs `FullRefresh`, not a lower mode.** Below it, `MetadataService` keeps only
 the providers whose `HasChanged` reports something, and the probe provider reports nothing
 for a `.strm` untouched since the scan. `FullRefresh` also calls remote metadata providers,
 which cannot overwrite anything: they run with `replaceData: false`, and the image refresh

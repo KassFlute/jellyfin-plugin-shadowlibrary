@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Jellyfin.Extensions.Json;
 using Jellyfin.Plugin.ShadowLibrary.Configuration;
 using MediaBrowser.Common.Net;
 using Microsoft.Extensions.Logging;
@@ -23,6 +24,9 @@ public class FriendServerClient
 
     private const string ClientName = "ShadowLibrary";
     private const int PageSize = 200;
+
+    // ids go in the query string, keep the URL well under common proxy limits
+    private const int MediaInfoBatchSize = 50;
     private const string MovieFields =
         "Overview,Genres,People,ProviderIds,Studios,Taglines,PremiereDate,OfficialRating,"
         + "CommunityRating,RunTimeTicks,SortName,OriginalTitle";
@@ -540,6 +544,56 @@ public class FriendServerClient
         }
 
         return ids;
+    }
+
+    /// <summary>
+    /// Reads what the friend server knows about the files of some items: streams,
+    /// attachments and chapters.
+    /// </summary>
+    /// <param name="normalizedUrl">Normalised friend server URL.</param>
+    /// <param name="accessToken">Session token.</param>
+    /// <param name="remoteUserId">Service account identifier on the friend server.</param>
+    /// <param name="deviceId">Device id to present.</param>
+    /// <param name="remoteItemIds">Item identifiers on the friend server.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The media info of the items the friend server returned.</returns>
+    public async Task<IReadOnlyList<RemoteMediaInfo>> GetMediaInfoAsync(
+        string normalizedUrl,
+        string accessToken,
+        string remoteUserId,
+        string deviceId,
+        IReadOnlyList<string> remoteItemIds,
+        CancellationToken cancellationToken)
+    {
+        var infos = new List<RemoteMediaInfo>();
+
+        foreach (var chunk in remoteItemIds.Chunk(MediaInfoBatchSize))
+        {
+            var uri = string.Format(
+                CultureInfo.InvariantCulture,
+                "{0}/Items?userId={1}&Ids={2}&Fields=MediaSources,Chapters",
+                normalizedUrl,
+                Uri.EscapeDataString(remoteUserId),
+                string.Join(',', chunk.Select(Uri.EscapeDataString)));
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+            request.Headers.TryAddWithoutValidation("Authorization", BuildAuthHeader(deviceId, accessToken));
+
+            using var response = await SendAsync(request, cancellationToken).ConfigureAwait(false);
+            response.EnsureSuccessStatusCode();
+
+            // Jellyfin's own options, the streams carry enums and types only its converters read
+            var page = await response.Content
+                .ReadFromJsonAsync<QueryResult<RemoteMediaInfo>>(JsonDefaults.PascalCaseOptions, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (page is not null)
+            {
+                infos.AddRange(page.Items);
+            }
+        }
+
+        return infos;
     }
 
     /// <summary>

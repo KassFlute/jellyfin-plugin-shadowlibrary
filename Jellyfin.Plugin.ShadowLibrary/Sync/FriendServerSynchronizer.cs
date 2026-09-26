@@ -206,7 +206,7 @@ public class FriendServerSynchronizer
         ResolveScannedItems(server.Id);
 
         report.Probed = await _probe
-            .ProbeAsync(_store.GetByFriendServer(server.Id), cancellationToken)
+            .ProbeAsync(server, _store.GetByFriendServer(server.Id), cancellationToken)
             .ConfigureAwait(false);
 
         _logger.LogInformation("[ShadowLibrary] Synchronised {Name}. {Report}", server.Name, report);
