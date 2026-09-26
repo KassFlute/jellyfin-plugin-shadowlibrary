@@ -358,7 +358,7 @@
                     });
             }
 
-            function fillLibrarySelect(id, collectionType, selected) {
+            function fillLibrarySelect(id, collectionType, selected, suggest) {
                 var select = $(id);
                 select.textContent = '';
 
@@ -378,10 +378,19 @@
                     select.appendChild(option);
                 });
 
-                if (selected) {
-                    select.value = selected;
-                } else if (matching.length === 1) {
+                // keep a stored library that no longer exists, a save would otherwise drop it silently
+                if (selected && !matching.some(function (library) { return library.Name === selected; })) {
+                    var missing = document.createElement('option');
+                    missing.value = selected;
+                    missing.textContent = selected + ' (not found)';
+                    select.appendChild(missing);
+                }
+
+                // suggest only for a new server, an empty value on an existing one is a choice
+                if (suggest && matching.length === 1) {
                     select.value = matching[0].Name;
+                } else {
+                    select.value = selected;
                 }
             }
 
@@ -488,8 +497,8 @@
                     ? 'Leave empty to keep the stored password.'
                     : 'Stored encrypted, never shown again.';
                 $('SlEnabled').checked = server ? server.Enabled : true;
-                fillLibrarySelect('SlMovieLibrary', 'movies', server ? server.MovieLibraryName : '');
-                fillLibrarySelect('SlShowLibrary', 'tvshows', server ? server.ShowLibraryName : '');
+                fillLibrarySelect('SlMovieLibrary', 'movies', server ? server.MovieLibraryName : '', !server);
+                fillLibrarySelect('SlShowLibrary', 'tvshows', server ? server.ShowLibraryName : '', !server);
                 $('SlSyncAll').checked = server ? server.SyncAllLibraries : true;
                 $('SlStatus').textContent = '';
 
