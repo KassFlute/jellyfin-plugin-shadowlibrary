@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Net;
 using System.Security.Cryptography;
@@ -6,6 +7,7 @@ using Jellyfin.Plugin.ShadowLibrary.Configuration;
 using Jellyfin.Plugin.ShadowLibrary.Remote;
 using Jellyfin.Plugin.ShadowLibrary.Storage;
 using Jellyfin.Plugin.ShadowLibrary.Sync;
+using MediaBrowser.Controller.Library;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -26,12 +28,21 @@ namespace Jellyfin.Plugin.ShadowLibrary.Api;
 [Route("ShadowLibrary/stream")]
 public class StreamController : ControllerBase
 {
+    // covers the ranges ffmpeg reads to start a playback, so starts and seeks stay instant
+    private const long BurstBytes = 16L * 1024 * 1024;
+
+    private const double RateFactor = 4;
+
+    // low bitrate files still get a quick refill after a stall
+    private const double MinRateBitsPerSecond = 8_000_000;
+
     private static readonly string[] RelayedHeaders =
         ["Content-Type", "Content-Length", "Content-Range", "Accept-Ranges", "Content-Disposition"];
 
     private readonly FriendServerClient _client;
     private readonly FriendServerSessionProvider _sessions;
     private readonly ImportedItemStore _store;
+    private readonly ILibraryManager _libraryManager;
     private readonly ILogger<StreamController> _logger;
 
     /// <summary>
@@ -40,16 +51,19 @@ public class StreamController : ControllerBase
     /// <param name="client">Friend server client.</param>
     /// <param name="sessions">Session provider.</param>
     /// <param name="store">Imported item store.</param>
+    /// <param name="libraryManager">Local library manager.</param>
     /// <param name="logger">Logger.</param>
     public StreamController(
         FriendServerClient client,
         FriendServerSessionProvider sessions,
         ImportedItemStore store,
+        ILibraryManager libraryManager,
         ILogger<StreamController> logger)
     {
         _client = client;
         _sessions = sessions;
         _store = store;
+        _libraryManager = libraryManager;
         _logger = logger;
     }
 
@@ -103,85 +117,26 @@ public class StreamController : ControllerBase
             return Unreachable(server.Name, "could not be authenticated against");
         }
 
-        PlaybackInfoResponse? info;
-        try
-        {
-            var (status, payload) = await _client.GetPlaybackInfoAsync(
-                session.Url,
-                session.AccessToken,
-                session.RemoteUserId,
-                session.DeviceId,
-                item.RemoteItemId,
-                cancellationToken).ConfigureAwait(false);
-
-            if (status == HttpStatusCode.Unauthorized)
-            {
-                // the stored token was revoked or expired, one retry with a fresh session
-                session = await _sessions.GetAsync(server, true, cancellationToken).ConfigureAwait(false);
-                if (session is null)
-                {
-                    return Unreachable(server.Name, "refused the service account");
-                }
-
-                (status, payload) = await _client.GetPlaybackInfoAsync(
-                    session.Url,
-                    session.AccessToken,
-                    session.RemoteUserId,
-                    session.DeviceId,
-                    item.RemoteItemId,
-                    cancellationToken).ConfigureAwait(false);
-            }
-
-            if (status == HttpStatusCode.NotFound)
-            {
-                _logger.LogInformation("[ShadowLibrary] {Server} no longer holds item {RemoteId}.", server.Name, item.RemoteItemId);
-                return StatusCode(StatusCodes.Status410Gone, "The friend server no longer holds this item.");
-            }
-
-            if (payload is null)
-            {
-                return Unreachable(server.Name, "answered " + (int)status + " to the playback request");
-            }
-
-            info = payload;
-        }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
-        {
-            _logger.LogWarning(ex, "[ShadowLibrary] Playback request to {Server} failed.", server.Name);
-            return Unreachable(server.Name, "is unreachable");
-        }
-
-        var source = Array.Find(info.MediaSources, s => s.SupportsDirectStream) ?? info.MediaSources.FirstOrDefault();
-        if (source is null)
-        {
-            _logger.LogWarning("[ShadowLibrary] {Server} returned no media source for {RemoteId}.", server.Name, item.RemoteItemId);
-            return StatusCode(StatusCodes.Status410Gone, "The friend server returned no playable source for this item.");
-        }
-
         var range = Request.Headers.Range.ToString();
+        var headOnly = HttpMethods.IsHead(Request.Method);
 
-        HttpResponseMessage upstream;
-        try
+        // no retry on 401, Jellyfin 10.11 serves static streams without checking the token.
+        // A revoked one is renewed by the next cycle, whose listing does check it
+        var opened = Stopwatch.GetTimestamp();
+        var upstream = await OpenAsync(server, session, item, range, headOnly, cancellationToken).ConfigureAwait(false);
+        if (upstream is null)
         {
-            upstream = await _client.OpenVideoStreamAsync(
-                session.Url,
-                session.AccessToken,
-                session.DeviceId,
-                item.RemoteItemId,
-                source.Id,
-                info.PlaySessionId,
-                range,
-                HttpMethods.IsHead(Request.Method),
-                cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
-        {
-            _logger.LogWarning(ex, "[ShadowLibrary] Opening the stream of {RemoteId} on {Server} failed.", item.RemoteItemId, server.Name);
             return Unreachable(server.Name, "is unreachable");
         }
 
         using (upstream)
         {
+            if (upstream.StatusCode == HttpStatusCode.NotFound)
+            {
+                _logger.LogInformation("[ShadowLibrary] {Server} no longer holds item {RemoteId}.", server.Name, item.RemoteItemId);
+                return StatusCode(StatusCodes.Status410Gone, "The friend server no longer holds this item.");
+            }
+
             if (!upstream.IsSuccessStatusCode)
             {
                 _logger.LogWarning(
@@ -193,27 +148,48 @@ public class StreamController : ControllerBase
             }
 
             _logger.LogInformation(
-                "[ShadowLibrary] Relaying {RemoteId} from {Server}. Upstream answered {Status}, range {Range}, length {Length}.",
+                "[ShadowLibrary] Relaying {RemoteId} from {Server}. Upstream answered {Status}, range {Range}, length {Length}, headers {HeadersMs} ms, client {UserAgent}.",
                 item.RemoteItemId,
                 server.Name,
                 (int)upstream.StatusCode,
                 string.IsNullOrEmpty(range) ? "none" : range,
-                upstream.Content.Headers.ContentLength?.ToString(CultureInfo.InvariantCulture) ?? "unknown");
+                upstream.Content.Headers.ContentLength?.ToString(CultureInfo.InvariantCulture) ?? "unknown",
+                (long)Stopwatch.GetElapsedTime(opened).TotalMilliseconds,
+                Request.Headers.UserAgent.ToString());
 
             Response.StatusCode = (int)upstream.StatusCode;
             RelayHeaders(upstream);
 
-            if (HttpMethods.IsHead(Request.Method))
+            if (headOnly)
             {
                 return new EmptyResult();
             }
 
+            long relayed = 0;
+            var bodyStarted = Stopwatch.GetTimestamp();
+            var rate = RateLimit(LocalBitrate(item));
             try
             {
                 var body = await upstream.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
                 await using (body.ConfigureAwait(false))
                 {
-                    await body.CopyToAsync(Response.Body, cancellationToken).ConfigureAwait(false);
+                    var buffer = new byte[81920];
+                    int read;
+                    while ((read = await body.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
+                    {
+                        await Response.Body.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+                        relayed += read;
+
+                        if (rate > 0 && relayed > BurstBytes)
+                        {
+                            // ahead of the allowance, wait until the rate catches up
+                            var allowed = BurstBytes + (rate * Stopwatch.GetElapsedTime(bodyStarted).TotalSeconds);
+                            if (relayed > allowed)
+                            {
+                                await Task.Delay(TimeSpan.FromSeconds((relayed - allowed) / rate), cancellationToken).ConfigureAwait(false);
+                            }
+                        }
+                    }
                 }
             }
             catch (Exception ex) when (ex is OperationCanceledException or IOException)
@@ -222,9 +198,64 @@ public class StreamController : ControllerBase
                 _logger.LogDebug(ex, "[ShadowLibrary] Relay of {RemoteId} ended early.", item.RemoteItemId);
             }
 
+            _logger.LogInformation(
+                "[ShadowLibrary] Relay of {RemoteId} closed after {Bytes} bytes in {Seconds:0.0} s, limit {Limit:l}.",
+                item.RemoteItemId,
+                relayed,
+                Stopwatch.GetElapsedTime(bodyStarted).TotalSeconds,
+                rate > 0 ? (rate * 8 / 1_000_000).ToString("0.0", CultureInfo.InvariantCulture) + " Mbit/s" : "none");
+
             return new EmptyResult();
         }
     }
+
+    private async Task<HttpResponseMessage?> OpenAsync(
+        FriendServer server,
+        FriendServerSession session,
+        ImportedItem item,
+        string range,
+        bool headOnly,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _client.OpenVideoStreamAsync(
+                session.Url,
+                session.AccessToken,
+                session.DeviceId,
+                item.RemoteItemId,
+                range,
+                headOnly,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            _logger.LogWarning(ex, "[ShadowLibrary] Opening the stream of {RemoteId} on {Server} failed.", item.RemoteItemId, server.Name);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Bytes per second a relay may sustain once past its burst, or 0 for no limit.
+    /// </summary>
+    /// <remarks>
+    /// Stream copy makes ffmpeg read the input as fast as the network allows, about fifteen
+    /// times the playback speed on a fast link, and a player in direct play does the same.
+    /// A few times the bitrate keeps them well ahead of playback without holding the link.
+    /// </remarks>
+    private static double RateLimit(int? bitrate)
+    {
+        if (bitrate is not > 0)
+        {
+            // no way to tell what the file needs, starving a 4K remux would be worse
+            return 0;
+        }
+
+        return Math.Max(bitrate.Value * RateFactor, MinRateBitsPerSecond) / 8d;
+    }
+
+    private int? LocalBitrate(ImportedItem item)
+        => item.LocalItemId is Guid id ? _libraryManager.GetItemById(id)?.TotalBitrate : null;
 
     private static bool IsKeyValid(string? key)
     {
