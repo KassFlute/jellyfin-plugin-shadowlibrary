@@ -27,9 +27,7 @@ friend server                this server                        player
      |     tracks of new items    |                                |
      |<---------------------------|                                |
      |                            |<-------------------------------|  3. play
-     |  4. PlaybackInfo           |                                |
-     |<---------------------------|                                |
-     |  5. /Videos/{id}/stream    |                                |
+     |  4. /Videos/{id}/stream    |                                |
      |============================>================================>
 ```
 
@@ -80,7 +78,7 @@ it in one piece: detach, move, rewrite the stored paths, reattach.
 ### Talking to a friend server
 
 - [FriendServerClient.cs](Jellyfin.Plugin.ShadowLibrary/Remote/FriendServerClient.cs), every
-  call to a friend server. Authentication, catalogue listing, images, playback info, media
+  call to a friend server. Authentication, catalogue listing, track info, images, media
   relay.
 - [FriendServerSessionProvider.cs](Jellyfin.Plugin.ShadowLibrary/Sync/FriendServerSessionProvider.cs),
   hands out session tokens, reusing the stored one and re-authenticating when it is refused.
@@ -171,17 +169,19 @@ otherwise have both copies writing to the same generated path.
 ## Playback
 
 [StreamController.cs](Jellyfin.Plugin.ShadowLibrary/Api/StreamController.cs) answers
-`/ShadowLibrary/stream/{id}`, resolves the item in the SQLite store, asks the friend server
-for a fresh playback description, then relays `/Videos/{id}/stream?static=true`.
+`/ShadowLibrary/stream/{id}`, resolves the item in the SQLite store, then relays
+`/Videos/{id}/stream?static=true` straight away. No playback info is asked first. For a static
+stream Jellyfin only uses the play session to find a running transcode, and without a
+`mediaSourceId` it serves the first source of the item (`StreamingHelpers.cs:118`). Starting or
+seeking makes ffmpeg open five or six ranges in a row, and a playback info in front of each
+used to add seconds to every start.
 
-The chosen source and play session are kept ten minutes per item, in
-[PlaybackTargetCache.cs](Jellyfin.Plugin.ShadowLibrary/Api/PlaybackTargetCache.cs). Starting or
-seeking a playback makes ffmpeg open five or six ranges in a row, and asking for the playback
-description each time added seconds to every start. A cached source the friend server refuses
-is dropped and asked for again once.
+Jellyfin 10.11 does not check the token on that endpoint (`VideosController.cs:312` carries no
+`[Authorize]`), so a revoked token never shows up as a 401 there. It is renewed by the next
+cycle, whose catalogue listing does check it.
 
-Past its first 16 MB, a relay is held to four times the bitrate the friend server reports for
-the file, 8 Mbit/s at least, and left unlimited when no bitrate is known. Stream copy makes
+Past its first 16 MB, a relay is held to four times the bitrate of the local item, which the
+cycle copied from the friend server, 8 Mbit/s at least, and left unlimited when no bitrate is known. Stream copy makes
 ffmpeg read its input as fast as the network allows, measured around fifteen times the
 playback speed, and a player in direct play does the same. Unchecked, one playback holds the
 whole link. The burst covers the ranges read to start or seek, so those stay instant.

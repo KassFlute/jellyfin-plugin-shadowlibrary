@@ -7,6 +7,7 @@ using Jellyfin.Plugin.ShadowLibrary.Configuration;
 using Jellyfin.Plugin.ShadowLibrary.Remote;
 using Jellyfin.Plugin.ShadowLibrary.Storage;
 using Jellyfin.Plugin.ShadowLibrary.Sync;
+using MediaBrowser.Controller.Library;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -41,7 +42,7 @@ public class StreamController : ControllerBase
     private readonly FriendServerClient _client;
     private readonly FriendServerSessionProvider _sessions;
     private readonly ImportedItemStore _store;
-    private readonly PlaybackTargetCache _targets;
+    private readonly ILibraryManager _libraryManager;
     private readonly ILogger<StreamController> _logger;
 
     /// <summary>
@@ -50,19 +51,19 @@ public class StreamController : ControllerBase
     /// <param name="client">Friend server client.</param>
     /// <param name="sessions">Session provider.</param>
     /// <param name="store">Imported item store.</param>
-    /// <param name="targets">Sources already resolved for recent relays.</param>
+    /// <param name="libraryManager">Local library manager.</param>
     /// <param name="logger">Logger.</param>
     public StreamController(
         FriendServerClient client,
         FriendServerSessionProvider sessions,
         ImportedItemStore store,
-        PlaybackTargetCache targets,
+        ILibraryManager libraryManager,
         ILogger<StreamController> logger)
     {
         _client = client;
         _sessions = sessions;
         _store = store;
-        _targets = targets;
+        _libraryManager = libraryManager;
         _logger = logger;
     }
 
@@ -118,49 +119,11 @@ public class StreamController : ControllerBase
 
         var range = Request.Headers.Range.ToString();
         var headOnly = HttpMethods.IsHead(Request.Method);
-        var started = Stopwatch.GetTimestamp();
 
-        var cached = _targets.TryGet(itemId, out var target);
-        if (!cached)
-        {
-            var resolved = await ResolveAsync(server, session, item, cancellationToken).ConfigureAwait(false);
-            if (resolved.Error is not null)
-            {
-                return resolved.Error;
-            }
-
-            (session, target) = (resolved.Session, resolved.Target);
-            _targets.Set(itemId, target);
-        }
-
-        var infoElapsed = Stopwatch.GetElapsedTime(started);
-
-        var upstream = await OpenAsync(server, session, item, target, range, headOnly, cancellationToken).ConfigureAwait(false);
-        if (upstream is not null && !upstream.IsSuccessStatusCode && cached)
-        {
-            // the friend server may have dropped the play session or the token, start over once
-            _logger.LogInformation(
-                "[ShadowLibrary] {Server} answered {Status} to a cached source of {RemoteId}, asking again.",
-                server.Name,
-                (int)upstream.StatusCode,
-                item.RemoteItemId);
-            upstream.Dispose();
-            _targets.Remove(itemId);
-            cached = false;
-
-            var resolved = await ResolveAsync(server, session, item, cancellationToken).ConfigureAwait(false);
-            if (resolved.Error is not null)
-            {
-                return resolved.Error;
-            }
-
-            (session, target) = (resolved.Session, resolved.Target);
-            _targets.Set(itemId, target);
-            infoElapsed = Stopwatch.GetElapsedTime(started);
-
-            upstream = await OpenAsync(server, session, item, target, range, headOnly, cancellationToken).ConfigureAwait(false);
-        }
-
+        // no retry on 401, Jellyfin 10.11 serves static streams without checking the token.
+        // A revoked one is renewed by the next cycle, whose listing does check it
+        var opened = Stopwatch.GetTimestamp();
+        var upstream = await OpenAsync(server, session, item, range, headOnly, cancellationToken).ConfigureAwait(false);
         if (upstream is null)
         {
             return Unreachable(server.Name, "is unreachable");
@@ -168,9 +131,14 @@ public class StreamController : ControllerBase
 
         using (upstream)
         {
+            if (upstream.StatusCode == HttpStatusCode.NotFound)
+            {
+                _logger.LogInformation("[ShadowLibrary] {Server} no longer holds item {RemoteId}.", server.Name, item.RemoteItemId);
+                return StatusCode(StatusCodes.Status410Gone, "The friend server no longer holds this item.");
+            }
+
             if (!upstream.IsSuccessStatusCode)
             {
-                _targets.Remove(itemId);
                 _logger.LogWarning(
                     "[ShadowLibrary] {Server} answered {Status} when asked for the media of {RemoteId}.",
                     server.Name,
@@ -179,17 +147,15 @@ public class StreamController : ControllerBase
                 return Unreachable(server.Name, "answered " + (int)upstream.StatusCode + " to the media request");
             }
 
-            var headersElapsed = Stopwatch.GetElapsedTime(started) - infoElapsed;
-
             _logger.LogInformation(
-                "[ShadowLibrary] Relaying {RemoteId} from {Server}. Upstream answered {Status}, range {Range}, length {Length}. Playback info {Info:l}, headers {HeadersMs} ms.",
+                "[ShadowLibrary] Relaying {RemoteId} from {Server}. Upstream answered {Status}, range {Range}, length {Length}, headers {HeadersMs} ms, client {UserAgent}.",
                 item.RemoteItemId,
                 server.Name,
                 (int)upstream.StatusCode,
                 string.IsNullOrEmpty(range) ? "none" : range,
                 upstream.Content.Headers.ContentLength?.ToString(CultureInfo.InvariantCulture) ?? "unknown",
-                cached ? "cached" : ((long)infoElapsed.TotalMilliseconds).ToString(CultureInfo.InvariantCulture) + " ms",
-                (long)headersElapsed.TotalMilliseconds);
+                (long)Stopwatch.GetElapsedTime(opened).TotalMilliseconds,
+                Request.Headers.UserAgent.ToString());
 
             Response.StatusCode = (int)upstream.StatusCode;
             RelayHeaders(upstream);
@@ -201,7 +167,7 @@ public class StreamController : ControllerBase
 
             long relayed = 0;
             var bodyStarted = Stopwatch.GetTimestamp();
-            var rate = RateLimit(target.Bitrate);
+            var rate = RateLimit(LocalBitrate(item));
             try
             {
                 var body = await upstream.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
@@ -243,79 +209,10 @@ public class StreamController : ControllerBase
         }
     }
 
-    /// <summary>
-    /// Asks the friend server which source to read and opens a play session for it.
-    /// </summary>
-    private async Task<(ActionResult? Error, FriendServerSession Session, PlaybackTarget Target)> ResolveAsync(
-        FriendServer server,
-        FriendServerSession session,
-        ImportedItem item,
-        CancellationToken cancellationToken)
-    {
-        PlaybackInfoResponse? info;
-        try
-        {
-            var (status, payload) = await _client.GetPlaybackInfoAsync(
-                session.Url,
-                session.AccessToken,
-                session.RemoteUserId,
-                session.DeviceId,
-                item.RemoteItemId,
-                cancellationToken).ConfigureAwait(false);
-
-            if (status == HttpStatusCode.Unauthorized)
-            {
-                // the stored token was revoked or expired, one retry with a fresh session
-                var refreshed = await _sessions.GetAsync(server, true, cancellationToken).ConfigureAwait(false);
-                if (refreshed is null)
-                {
-                    return (Unreachable(server.Name, "refused the service account"), session, default);
-                }
-
-                session = refreshed;
-                (status, payload) = await _client.GetPlaybackInfoAsync(
-                    session.Url,
-                    session.AccessToken,
-                    session.RemoteUserId,
-                    session.DeviceId,
-                    item.RemoteItemId,
-                    cancellationToken).ConfigureAwait(false);
-            }
-
-            if (status == HttpStatusCode.NotFound)
-            {
-                _logger.LogInformation("[ShadowLibrary] {Server} no longer holds item {RemoteId}.", server.Name, item.RemoteItemId);
-                return (StatusCode(StatusCodes.Status410Gone, "The friend server no longer holds this item."), session, default);
-            }
-
-            if (payload is null)
-            {
-                return (Unreachable(server.Name, "answered " + (int)status + " to the playback request"), session, default);
-            }
-
-            info = payload;
-        }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
-        {
-            _logger.LogWarning(ex, "[ShadowLibrary] Playback request to {Server} failed.", server.Name);
-            return (Unreachable(server.Name, "is unreachable"), session, default);
-        }
-
-        var source = Array.Find(info.MediaSources, s => s.SupportsDirectStream) ?? info.MediaSources.FirstOrDefault();
-        if (source is null)
-        {
-            _logger.LogWarning("[ShadowLibrary] {Server} returned no media source for {RemoteId}.", server.Name, item.RemoteItemId);
-            return (StatusCode(StatusCodes.Status410Gone, "The friend server returned no playable source for this item."), session, default);
-        }
-
-        return (null, session, new PlaybackTarget(source.Id, info.PlaySessionId, source.Bitrate));
-    }
-
     private async Task<HttpResponseMessage?> OpenAsync(
         FriendServer server,
         FriendServerSession session,
         ImportedItem item,
-        PlaybackTarget target,
         string range,
         bool headOnly,
         CancellationToken cancellationToken)
@@ -327,8 +224,6 @@ public class StreamController : ControllerBase
                 session.AccessToken,
                 session.DeviceId,
                 item.RemoteItemId,
-                target.MediaSourceId,
-                target.PlaySessionId,
                 range,
                 headOnly,
                 cancellationToken).ConfigureAwait(false);
@@ -358,6 +253,9 @@ public class StreamController : ControllerBase
 
         return Math.Max(bitrate.Value * RateFactor, MinRateBitsPerSecond) / 8d;
     }
+
+    private int? LocalBitrate(ImportedItem item)
+        => item.LocalItemId is Guid id ? _libraryManager.GetItemById(id)?.TotalBitrate : null;
 
     private static bool IsKeyValid(string? key)
     {

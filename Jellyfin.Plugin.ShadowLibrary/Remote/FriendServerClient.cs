@@ -651,53 +651,6 @@ public class FriendServerClient
     }
 
     /// <summary>
-    /// Asks the friend server for a fresh playback description of an item.
-    /// </summary>
-    /// <param name="normalizedUrl">Normalised friend server URL.</param>
-    /// <param name="accessToken">Session token.</param>
-    /// <param name="remoteUserId">Service account identifier on the friend server.</param>
-    /// <param name="deviceId">Device id to present.</param>
-    /// <param name="remoteItemId">Item identifier on the friend server.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The playback info, and the status the friend server answered with.</returns>
-    public async Task<(HttpStatusCode Status, PlaybackInfoResponse? Info)> GetPlaybackInfoAsync(
-        string normalizedUrl,
-        string accessToken,
-        string remoteUserId,
-        string deviceId,
-        string remoteItemId,
-        CancellationToken cancellationToken)
-    {
-        var uri = string.Format(
-            CultureInfo.InvariantCulture,
-            "{0}/Items/{1}/PlaybackInfo?userId={2}",
-            normalizedUrl,
-            Uri.EscapeDataString(remoteItemId),
-            Uri.EscapeDataString(remoteUserId));
-
-        using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-        request.Headers.TryAddWithoutValidation("Authorization", BuildAuthHeader(deviceId, accessToken));
-
-        using var response = await SendAsync(request, cancellationToken).ConfigureAwait(false);
-        if (!response.IsSuccessStatusCode)
-        {
-            return (response.StatusCode, null);
-        }
-
-        try
-        {
-            var info = await response.Content
-                .ReadFromJsonAsync<PlaybackInfoResponse>(JsonOptions, cancellationToken)
-                .ConfigureAwait(false);
-            return (response.StatusCode, info);
-        }
-        catch (JsonException)
-        {
-            return (HttpStatusCode.BadGateway, null);
-        }
-    }
-
-    /// <summary>
     /// Opens the media stream of a remote item. The caller owns the response and must
     /// dispose it once the body has been relayed.
     /// </summary>
@@ -705,8 +658,6 @@ public class FriendServerClient
     /// <param name="accessToken">Session token.</param>
     /// <param name="deviceId">Device id to present.</param>
     /// <param name="remoteItemId">Item identifier on the friend server.</param>
-    /// <param name="mediaSourceId">Media source to read.</param>
-    /// <param name="playSessionId">Play session opened by the playback info call.</param>
     /// <param name="range">Range header of the incoming request, relayed as is.</param>
     /// <param name="headOnly">Ask for headers only.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
@@ -716,28 +667,18 @@ public class FriendServerClient
         string accessToken,
         string deviceId,
         string remoteItemId,
-        string? mediaSourceId,
-        string? playSessionId,
         string? range,
         bool headOnly,
         CancellationToken cancellationToken)
     {
+        // no mediaSourceId, a static stream then serves the first source of the item and needs
+        // no playback info round trip first
         var uri = string.Format(
             CultureInfo.InvariantCulture,
             "{0}/Videos/{1}/stream?static=true&deviceId={2}",
             normalizedUrl,
             Uri.EscapeDataString(remoteItemId),
             Uri.EscapeDataString(deviceId));
-
-        if (!string.IsNullOrEmpty(mediaSourceId))
-        {
-            uri += "&mediaSourceId=" + Uri.EscapeDataString(mediaSourceId);
-        }
-
-        if (!string.IsNullOrEmpty(playSessionId))
-        {
-            uri += "&playSessionId=" + Uri.EscapeDataString(playSessionId);
-        }
 
         var request = new HttpRequestMessage(headOnly ? HttpMethod.Head : HttpMethod.Get, uri);
         request.Headers.TryAddWithoutValidation("Authorization", BuildAuthHeader(deviceId, accessToken));
