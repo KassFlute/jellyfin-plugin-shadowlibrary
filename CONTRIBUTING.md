@@ -7,7 +7,17 @@
 ```
 
 Writes `artifacts/ShadowLibrary_<version>.zip`. Unzip it into the `plugins` folder of a
-Jellyfin config directory and restart the server.
+Jellyfin config directory, `/var/lib/jellyfin/plugins` for the Debian package or
+`/config/plugins` in Docker, and restart the server.
+
+It needs the .NET 9.0 SDK. Ubuntu ships none, so install one locally if needed:
+
+```bash
+curl -sSL -o /tmp/dotnet-install.sh https://dot.net/v1/dotnet-install.sh
+chmod +x /tmp/dotnet-install.sh
+/tmp/dotnet-install.sh --channel 9.0 --install-dir "$HOME/.dotnet"
+export PATH="$HOME/.dotnet:$PATH"
+```
 
 The build runs the same analyzers as the official Jellyfin plugins, with warnings treated as
 errors, so a build that succeeds locally is a build that passes CI. The exceptions to
@@ -29,14 +39,15 @@ needing a newer server.
 Release Drafter keeps a draft release up to date from the pull requests merged since the last
 one, and opens a `Prepare ShadowLibrary <version>` pull request carrying the same notes in
 `build.yaml`, which is what the plugin catalogue shows, and in `CHANGELOG.md`. Releasing is
-then two steps.
+then three steps.
 
 1. Merge the preparation pull request.
 2. Publish the draft release.
+3. Merge the `Publish ShadowLibrary <version>` pull request the publish workflow opens.
 
 The publish workflow builds the plugin, attaches the zip and its checksums to the release,
-adds the version to `manifest.json` and pushes that back to `main`. Servers that added the
-repository see the update on their next check.
+and adds the version to `manifest.json` through that pull request, since `main` only takes
+pull requests. Servers that added the repository see the update once it is merged.
 
 Everything here reads merged pull requests, so a commit pushed straight to `main` reaches
 users without ever showing up in a changelog. Their labels decide two things: the version,
