@@ -1,7 +1,7 @@
 ---
 name: "ShadowLibrary"
 guid: "a61f78e8-dd46-4eda-9c7b-b5db55348d17"
-version: "1.0.1.0"
+version: "1.0.2.0"
 targetAbi: "10.11.0.0"
 framework: "net9.0"
 owner: "cassien"
@@ -13,8 +13,4 @@ category: "General"
 artifacts:
   - "Jellyfin.Plugin.ShadowLibrary.dll"
 changelog: |-
-  ### Bug fixes
-  - Fix slow playback starts and link saturation through the relay (#14) @KassFlute
-  - Fix network saturation during the library scan (#13) @KassFlute
-  - Fix the stored library choice in the friend server editor (#12) @KassFlute
-  - Fix Microsoft.Data.Sqlite failing to load on Jellyfin 10.11.11 (#11) @KassFlute
+  - No changes

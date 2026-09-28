@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.2.0
+
+- No changes
+
 ## 1.0.1.0
 
 ### Bug fixes
