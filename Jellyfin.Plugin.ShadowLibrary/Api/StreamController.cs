@@ -28,8 +28,14 @@ namespace Jellyfin.Plugin.ShadowLibrary.Api;
 [Route("ShadowLibrary/stream")]
 public class StreamController : ControllerBase
 {
-    // covers the ranges ffmpeg reads to start a playback, so starts and seeks stay instant
-    private const long BurstBytes = 16L * 1024 * 1024;
+    // covers ffmpeg's own analysis plus its first HLS segments, so it does not start at 4x
+    private const double BurstSeconds = 60;
+
+    // floor for low bitrate files, keeps seeks instant
+    private const long MinBurstBytes = 16L * 1024 * 1024;
+
+    // ffprobe and ffmpeg read whatever arrives, a bigger allowance only saturates the link
+    private const long MaxBurstBytes = 128L * 1024 * 1024;
 
     private const double RateFactor = 4;
 
@@ -167,7 +173,9 @@ public class StreamController : ControllerBase
 
             long relayed = 0;
             var bodyStarted = Stopwatch.GetTimestamp();
-            var rate = RateLimit(LocalBitrate(item));
+            var bitrate = LocalBitrate(item);
+            var rate = RateLimit(bitrate);
+            var burst = Burst(bitrate);
             try
             {
                 var body = await upstream.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
@@ -180,10 +188,10 @@ public class StreamController : ControllerBase
                         await Response.Body.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
                         relayed += read;
 
-                        if (rate > 0 && relayed > BurstBytes)
+                        if (rate > 0 && relayed > burst)
                         {
                             // ahead of the allowance, wait until the rate catches up
-                            var allowed = BurstBytes + (rate * Stopwatch.GetElapsedTime(bodyStarted).TotalSeconds);
+                            var allowed = burst + (rate * Stopwatch.GetElapsedTime(bodyStarted).TotalSeconds);
                             if (relayed > allowed)
                             {
                                 await Task.Delay(TimeSpan.FromSeconds((relayed - allowed) / rate), cancellationToken).ConfigureAwait(false);
@@ -203,7 +211,10 @@ public class StreamController : ControllerBase
                 item.RemoteItemId,
                 relayed,
                 Stopwatch.GetElapsedTime(bodyStarted).TotalSeconds,
-                rate > 0 ? (rate * 8 / 1_000_000).ToString("0.0", CultureInfo.InvariantCulture) + " Mbit/s" : "none");
+                rate > 0
+                    ? (rate * 8 / 1_000_000).ToString("0.0", CultureInfo.InvariantCulture) + " Mbit/s past "
+                        + (burst / (1024 * 1024)).ToString(CultureInfo.InvariantCulture) + " MB"
+                    : "none");
 
             return new EmptyResult();
         }
@@ -253,6 +264,14 @@ public class StreamController : ControllerBase
 
         return Math.Max(bitrate.Value * RateFactor, MinRateBitsPerSecond) / 8d;
     }
+
+    /// <summary>
+    /// Bytes a relay may send at full speed before the rate limit applies.
+    /// </summary>
+    private static long Burst(int? bitrate)
+        => bitrate is > 0
+            ? Math.Clamp((long)(bitrate.Value / 8d * BurstSeconds), MinBurstBytes, MaxBurstBytes)
+            : MinBurstBytes;
 
     private int? LocalBitrate(ImportedItem item)
         => item.LocalItemId is Guid id ? _libraryManager.GetItemById(id)?.TotalBitrate : null;
