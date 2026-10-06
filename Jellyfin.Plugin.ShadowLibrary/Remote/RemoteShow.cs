@@ -137,6 +137,11 @@ public class RemoteEpisode
     public long? RunTimeTicks { get; set; }
 
     /// <summary>
+    /// Gets or sets the container of the media file, decides the extension of the stream URL.
+    /// </summary>
+    public string? Container { get; set; }
+
+    /// <summary>
     /// Gets or sets the cast and crew.
     /// </summary>
     public RemotePerson[]? People { get; set; }

@@ -273,7 +273,7 @@ public class MediaFileWriter
         var strmPath = Path.Combine(folderPath, baseName + ".strm");
         var nfoPath = Path.Combine(folderPath, baseName + ".nfo");
 
-        await File.WriteAllTextAsync(strmPath, BuildStreamUrl(itemKey), cancellationToken).ConfigureAwait(false);
+        await File.WriteAllTextAsync(strmPath, BuildStreamUrl(itemKey, movie.Container), cancellationToken).ConfigureAwait(false);
 
         await WriteNfoAsync(nfoPath, "movie", async writer =>
         {
@@ -406,7 +406,7 @@ public class MediaFileWriter
         var strmPath = Path.Combine(seasonFolderPath, baseName + ".strm");
         var nfoPath = Path.Combine(seasonFolderPath, baseName + ".nfo");
 
-        await File.WriteAllTextAsync(strmPath, BuildStreamUrl(itemKey), cancellationToken).ConfigureAwait(false);
+        await File.WriteAllTextAsync(strmPath, BuildStreamUrl(itemKey, episode.Container), cancellationToken).ConfigureAwait(false);
 
         await WriteNfoAsync(nfoPath, "episodedetails", async writer =>
         {
@@ -443,14 +443,16 @@ public class MediaFileWriter
     /// </summary>
     /// <param name="strmPath">Path of the .strm file.</param>
     /// <param name="itemKey">Plugin side item identifier.</param>
+    /// <param name="container">Container of the remote media file.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>True when the file was rewritten.</returns>
     public async Task<bool> EnsureStreamUrlAsync(
         string strmPath,
         Guid itemKey,
+        string? container,
         CancellationToken cancellationToken)
     {
-        var expected = BuildStreamUrl(itemKey);
+        var expected = BuildStreamUrl(itemKey, container);
 
         try
         {
@@ -473,17 +475,24 @@ public class MediaFileWriter
     /// Builds the local proxy URL a .strm points at.
     /// </summary>
     /// <param name="itemKey">Plugin side item identifier.</param>
+    /// <param name="container">Container of the remote media file.</param>
     /// <returns>The absolute URL.</returns>
-    public string BuildStreamUrl(Guid itemKey)
+    /// <remarks>
+    /// Matroska files get a URL ending in .mkv, the key moved into the path. Jellyfin only
+    /// lays a remux playlist out on stored keyframes when the media path has an allowed
+    /// extension, and a query string would hide it. The URL must not wait for the keyframes:
+    /// rewriting a .strm makes Jellyfin recreate the item, which deletes them. See
+    /// <see cref="KeyframeImporter"/>.
+    /// </remarks>
+    public string BuildStreamUrl(Guid itemKey, string? container)
     {
         var baseUrl = ResolveBaseUrl().Url.TrimEnd('/');
+        var key = Uri.EscapeDataString(GetOrCreateStreamKey());
+        var id = itemKey.ToString("N", CultureInfo.InvariantCulture);
 
-        return string.Format(
-            CultureInfo.InvariantCulture,
-            "{0}/ShadowLibrary/stream/{1}?key={2}",
-            baseUrl,
-            itemKey.ToString("N", CultureInfo.InvariantCulture),
-            Uri.EscapeDataString(GetOrCreateStreamKey()));
+        return KeyframeImporter.IsMatroska(container)
+            ? string.Format(CultureInfo.InvariantCulture, "{0}/ShadowLibrary/stream/{1}/{2}.mkv", baseUrl, key, id)
+            : string.Format(CultureInfo.InvariantCulture, "{0}/ShadowLibrary/stream/{1}?key={2}", baseUrl, id, key);
     }
 
     /// <summary>

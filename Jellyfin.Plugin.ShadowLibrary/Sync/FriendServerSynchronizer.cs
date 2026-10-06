@@ -35,6 +35,7 @@ public class FriendServerSynchronizer
     private readonly MediaFileWriter _writer;
     private readonly ImportedMediaCleaner _cleaner;
     private readonly MediaProbe _probe;
+    private readonly KeyframeImporter _keyframes;
     private readonly LibraryAttacher _attacher;
     private readonly GeneratedPathMigrator _migrator;
     private readonly ILibraryManager _libraryManager;
@@ -50,6 +51,7 @@ public class FriendServerSynchronizer
     /// <param name="writer">File writer.</param>
     /// <param name="cleaner">Imported media cleaner.</param>
     /// <param name="probe">Media inspector.</param>
+    /// <param name="keyframes">Keyframe importer.</param>
     /// <param name="attacher">Library attacher.</param>
     /// <param name="migrator">Generated path migrator.</param>
     /// <param name="libraryManager">Local library manager.</param>
@@ -62,6 +64,7 @@ public class FriendServerSynchronizer
         MediaFileWriter writer,
         ImportedMediaCleaner cleaner,
         MediaProbe probe,
+        KeyframeImporter keyframes,
         LibraryAttacher attacher,
         GeneratedPathMigrator migrator,
         ILibraryManager libraryManager,
@@ -74,6 +77,7 @@ public class FriendServerSynchronizer
         _writer = writer;
         _cleaner = cleaner;
         _probe = probe;
+        _keyframes = keyframes;
         _attacher = attacher;
         _migrator = migrator;
         _libraryManager = libraryManager;
@@ -209,6 +213,12 @@ public class FriendServerSynchronizer
             .ProbeAsync(server, _store.GetByFriendServer(server.Id), cancellationToken)
             .ConfigureAwait(false);
 
+        // needs the container, which the probe above fills in. A .strm written this cycle
+        // makes Jellyfin recreate its item soon, which would delete what is stored now
+        report.Keyframes = await _keyframes
+            .ImportAsync(server, _store.GetByFriendServer(server.Id).Where(i => !report.WrittenItems.Contains(i.Id)), cancellationToken)
+            .ConfigureAwait(false);
+
         _logger.LogInformation("[ShadowLibrary] Synchronised {Name}. {Report}", server.Name, report);
         return report;
     }
@@ -282,6 +292,7 @@ public class FriendServerSynchronizer
                 MediaFileWriter.ComputeHash(movie, MediaFileWriter.BuildOriginTag(server)),
                 claimKeys,
                 movie.Name,
+                movie.Container,
                 (item, refresh) => _writer.WriteMovieAsync(
                     folder, movie, server, item.Id, catalogue.Session, refresh, cancellationToken),
                 report,
@@ -410,6 +421,7 @@ public class FriendServerSynchronizer
                     MediaFileWriter.ComputeHash(episode),
                     episodeKeys,
                     series.Name + " " + MediaFileWriter.BuildEpisodeBaseName(episode),
+                    episode.Container,
                     (item, refresh) => _writer.WriteEpisodeAsync(
                         seasonFolder, episode, item.Id, catalogue.Session, refresh, cancellationToken),
                     report,
@@ -435,6 +447,7 @@ public class FriendServerSynchronizer
         string hash,
         string[] claimKeys,
         string label,
+        string? container,
         Func<ImportedItem, bool, Task<GeneratedFiles>> write,
         SyncReport report,
         CancellationToken cancellationToken)
@@ -446,8 +459,11 @@ public class FriendServerSynchronizer
         {
             report.Unchanged++;
 
-            await _writer.EnsureStreamUrlAsync(existing.StrmPath, existing.Id, cancellationToken)
-                .ConfigureAwait(false);
+            if (await _writer.EnsureStreamUrlAsync(existing.StrmPath, existing.Id, container, cancellationToken)
+                .ConfigureAwait(false))
+            {
+                report.WrittenItems.Add(existing.Id);
+            }
 
             var touched = ClearUnavailability(existing);
             touched |= ResolveLocalItem(existing);
@@ -489,6 +505,7 @@ public class FriendServerSynchronizer
             ResolveLocalItem(item);
 
             _store.Upsert(item);
+            report.WrittenItems.Add(item.Id);
 
             if (existing is null)
             {

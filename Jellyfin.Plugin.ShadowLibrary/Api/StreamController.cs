@@ -94,10 +94,42 @@ public class StreamController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status410Gone)]
     [ProducesResponseType(StatusCodes.Status502BadGateway)]
-    public async Task<ActionResult> GetStream(
+    public Task<ActionResult> GetStream(
         [FromRoute] Guid itemId,
         [FromQuery] string? key,
         CancellationToken cancellationToken)
+        => RelayAsync(itemId, key, cancellationToken);
+
+    /// <summary>
+    /// Relays the media of an imported Matroska item. Same as <see cref="GetStream"/>, the
+    /// key moves into the path so the URL ends in the extension Jellyfin checks before using
+    /// stored keyframes.
+    /// </summary>
+    /// <param name="key">Key carried by the .strm URL.</param>
+    /// <param name="itemId">Plugin side item identifier, the one written in the .strm.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <response code="200">Media relayed.</response>
+    /// <response code="206">Requested range relayed.</response>
+    /// <response code="401">Missing or wrong key.</response>
+    /// <response code="404">Unknown item.</response>
+    /// <response code="410">The friend server no longer holds this item.</response>
+    /// <response code="502">The friend server could not be reached.</response>
+    /// <returns>The relayed media.</returns>
+    [HttpGet("{key}/{itemId:guid}.mkv")]
+    [HttpHead("{key}/{itemId:guid}.mkv")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status206PartialContent)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status410Gone)]
+    [ProducesResponseType(StatusCodes.Status502BadGateway)]
+    public Task<ActionResult> GetMatroskaStream(
+        [FromRoute] string key,
+        [FromRoute] Guid itemId,
+        CancellationToken cancellationToken)
+        => RelayAsync(itemId, key, cancellationToken);
+
+    private async Task<ActionResult> RelayAsync(Guid itemId, string? key, CancellationToken cancellationToken)
     {
         if (!IsKeyValid(key))
         {
