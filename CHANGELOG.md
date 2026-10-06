@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.2.0
+
+### Bug fixes
+- Fix resume and seek hanging on remuxed imported films (#23) @KassFlute
+- Fix the slow start of every playback of an imported item (#21) @KassFlute
+- Fix the relay throttling the start of a playback (#20) @KassFlute
+
 ## 1.0.1.0
 
 ### Bug fixes
