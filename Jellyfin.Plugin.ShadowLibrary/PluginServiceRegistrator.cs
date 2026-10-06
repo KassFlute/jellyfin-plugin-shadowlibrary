@@ -1,3 +1,4 @@
+using Jellyfin.Plugin.ShadowLibrary.Playback;
 using Jellyfin.Plugin.ShadowLibrary.Remote;
 using Jellyfin.Plugin.ShadowLibrary.Security;
 using Jellyfin.Plugin.ShadowLibrary.Storage;
@@ -32,5 +33,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<GeneratedPathMigrator>();
         serviceCollection.AddSingleton<FriendServerSynchronizer>();
         serviceCollection.AddSingleton<IScheduledTask, SyncScheduledTask>();
+
+        MediaSourceManagerRegistration.Register(serviceCollection);
     }
 }
