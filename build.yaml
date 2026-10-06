@@ -1,7 +1,7 @@
 ---
 name: "ShadowLibrary"
 guid: "a61f78e8-dd46-4eda-9c7b-b5db55348d17"
-version: "1.0.1.0"
+version: "1.1.0.0"
 targetAbi: "10.11.0.0"
 framework: "net9.0"
 owner: "cassien"
@@ -14,8 +14,10 @@ imageUrl: "https://raw.githubusercontent.com/KassFlute/jellyfin-plugin-shadowlib
 artifacts:
   - "Jellyfin.Plugin.ShadowLibrary.dll"
 changelog: |-
+  ### Features
+  - Add a plugin image to the catalogue (#24) @KassFlute
+
   ### Bug fixes
-  - Fix slow playback starts and link saturation through the relay (#14) @KassFlute
-  - Fix network saturation during the library scan (#13) @KassFlute
-  - Fix the stored library choice in the friend server editor (#12) @KassFlute
-  - Fix Microsoft.Data.Sqlite failing to load on Jellyfin 10.11.11 (#11) @KassFlute
+  - Fix resume and seek hanging on remuxed imported films (#23) @KassFlute
+  - Fix the slow start of every playback of an imported item (#21) @KassFlute
+  - Fix the relay throttling the start of a playback (#20) @KassFlute
