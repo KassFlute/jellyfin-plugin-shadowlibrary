@@ -10,6 +10,7 @@ description: >
   Browse and stream movies and shows from other Jellyfin instances without copying any file, through .strm entries pointing at a local proxy.
 
 category: "General"
+imageUrl: "https://raw.githubusercontent.com/KassFlute/jellyfin-plugin-shadowlibrary/main/images/logo.png"
 artifacts:
   - "Jellyfin.Plugin.ShadowLibrary.dll"
 changelog: |-
