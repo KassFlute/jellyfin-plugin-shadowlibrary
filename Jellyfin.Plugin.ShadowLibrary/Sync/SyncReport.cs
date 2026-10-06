@@ -54,6 +54,16 @@ public class SyncReport
     public int Probed { get; set; }
 
     /// <summary>
+    /// Gets or sets the number of items whose keyframes were stored.
+    /// </summary>
+    public int Keyframes { get; set; }
+
+    /// <summary>
+    /// Gets the items whose .strm was written during this cycle.
+    /// </summary>
+    internal HashSet<Guid> WrittenItems { get; } = [];
+
+    /// <summary>
     /// Gets or sets the number of items that failed to import.
     /// </summary>
     public int Failed { get; set; }
@@ -67,7 +77,7 @@ public class SyncReport
     public override string ToString() => string.Format(
         CultureInfo.InvariantCulture,
         "reached={0} added={1} updated={2} unchanged={3} removed={4} alreadyLocal={5} "
-        + "duplicate={6} unidentified={7} unavailable={8} probed={9} failed={10}",
+        + "duplicate={6} unidentified={7} unavailable={8} probed={9} keyframes={10} failed={11}",
         Reached,
         Added,
         Updated,
@@ -78,5 +88,6 @@ public class SyncReport
         Unidentified,
         Unavailable,
         Probed,
+        Keyframes,
         Failed);
 }

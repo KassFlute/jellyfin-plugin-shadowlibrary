@@ -651,6 +651,52 @@ public class FriendServerClient
     }
 
     /// <summary>
+    /// Reads a byte range of the media of a remote item.
+    /// </summary>
+    /// <param name="normalizedUrl">Normalised friend server URL.</param>
+    /// <param name="accessToken">Session token.</param>
+    /// <param name="deviceId">Device id to present.</param>
+    /// <param name="remoteItemId">Item identifier on the friend server.</param>
+    /// <param name="offset">First byte.</param>
+    /// <param name="length">Byte count.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The bytes, fewer than asked only at the end of the file.</returns>
+    /// <exception cref="HttpRequestException">The friend server did not serve the range.</exception>
+    public async Task<byte[]> ReadVideoRangeAsync(
+        string normalizedUrl,
+        string accessToken,
+        string deviceId,
+        string remoteItemId,
+        long offset,
+        int length,
+        CancellationToken cancellationToken)
+    {
+        var range = string.Create(CultureInfo.InvariantCulture, $"bytes={offset}-{offset + length - 1}");
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(RequestTimeout);
+
+        using var response = await OpenVideoStreamAsync(normalizedUrl, accessToken, deviceId, remoteItemId, range, false, timeout.Token)
+            .ConfigureAwait(false);
+
+        // a 200 would be the whole file from byte 0, never what was asked past the start
+        if (response.StatusCode != HttpStatusCode.PartialContent && !(response.IsSuccessStatusCode && offset == 0))
+        {
+            throw new HttpRequestException(
+                FormattableString.Invariant($"Range {range} of {remoteItemId} answered {(int)response.StatusCode}."),
+                null,
+                response.StatusCode);
+        }
+
+        var body = await response.Content.ReadAsStreamAsync(timeout.Token).ConfigureAwait(false);
+        await using (body.ConfigureAwait(false))
+        {
+            var buffer = new byte[length];
+            var read = await body.ReadAtLeastAsync(buffer, length, false, timeout.Token).ConfigureAwait(false);
+            return read == length ? buffer : buffer[..read];
+        }
+    }
+
+    /// <summary>
     /// Opens the media stream of a remote item. The caller owns the response and must
     /// dispose it once the body has been relayed.
     /// </summary>
