@@ -92,7 +92,7 @@ public class FriendServerSynchronizer
     /// <returns>The local catalogue.</returns>
     public LocalCatalogue BuildLocalCatalogue()
     {
-        var catalogue = LocalCatalogue.Build(_libraryManager, ConfigurationStore.Current.MediaRootPath);
+        var catalogue = LocalCatalogue.Build(_libraryManager);
         catalogue.SeedClaims(_store.GetClaims());
         return catalogue;
     }
@@ -418,9 +418,19 @@ public class FriendServerSynchronizer
                     _cleaner.RemoveSeries(storedSeries!);
                 }
 
-                await _writer.WriteSeriesAsync(
-                    seriesFolder, series, server, catalogue.Session, storedSeries is not null, cancellationToken)
-                    .ConfigureAwait(false);
+                try
+                {
+                    await _writer.WriteSeriesAsync(
+                        seriesFolder, series, server, catalogue.Session, storedSeries is not null, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    report.Failed += episodes.Count;
+                    seen.UnionWith(episodes.Select(e => e.Episode.Id));
+                    _logger.LogError(ex, "[ShadowLibrary] Could not import {Label} from {Server}.", series.Name, server.Name);
+                    continue;
+                }
 
                 _store.UpsertSeries(new ImportedSeries
                 {

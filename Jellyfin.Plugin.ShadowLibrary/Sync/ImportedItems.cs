@@ -7,7 +7,10 @@ namespace Jellyfin.Plugin.ShadowLibrary.Sync;
 /// </summary>
 public static class ImportedItems
 {
-    private const string RelayPathMarker = "/ShadowLibrary/stream/";
+    /// <summary>
+    /// Part of the URL every generated .strm holds.
+    /// </summary>
+    public const string RelayPathMarker = "/ShadowLibrary/stream/";
 
     /// <summary>
     /// Tells whether an item plays through the relay, whatever path it was scanned from.

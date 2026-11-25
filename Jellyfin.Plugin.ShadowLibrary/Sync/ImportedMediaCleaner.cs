@@ -9,8 +9,6 @@ namespace Jellyfin.Plugin.ShadowLibrary.Sync;
 /// </summary>
 public class ImportedMediaCleaner
 {
-    private const string MarkerFileName = ".shadowlibrary";
-
     private readonly ImportedItemStore _store;
     private readonly ILogger<ImportedMediaCleaner> _logger;
 
@@ -45,18 +43,12 @@ public class ImportedMediaCleaner
         if (item.Kind == ImportedItemKind.Movie)
         {
             // a movie owns its folder
-            DeleteFolder(item.FolderPath);
+            Guarded(item.FolderPath, GeneratedContent.RemoveTitle);
             return;
         }
 
-        // an episode shares its season folder with its siblings, so only its own files go.
-        // Anything named after it counts, subtitles Jellyfin fetched afterwards included,
-        // otherwise they would linger and keep the season folder from being pruned.
-        foreach (var file in SiblingsOf(item.StrmPath))
-        {
-            DeleteFile(file);
-        }
-
+        // an episode shares its season folder with its siblings, so only its own files go
+        Guarded(item.StrmPath, GeneratedContent.RemoveStrm);
         PruneIfEmpty(item.FolderPath);
     }
 
@@ -66,7 +58,7 @@ public class ImportedMediaCleaner
     /// <param name="series">Series to remove.</param>
     public void RemoveSeries(ImportedSeries series)
     {
-        DeleteFolder(series.FolderPath);
+        Guarded(series.FolderPath, GeneratedContent.RemoveTitle);
         _store.DeleteSeries(series.FriendServerId, series.RemoteSeriesId);
     }
 
@@ -116,7 +108,7 @@ public class ImportedMediaCleaner
 
         foreach (var name in new[] { MediaFileWriter.MoviesFolderName, MediaFileWriter.ShowsFolderName })
         {
-            var marker = Path.Combine(serverFolder, name, MarkerFileName);
+            var marker = Path.Combine(serverFolder, name, GeneratedContent.MarkerFileName);
             if (File.Exists(marker))
             {
                 continue;
@@ -156,7 +148,7 @@ public class ImportedMediaCleaner
     }
 
     /// <summary>
-    /// Deletes the whole folder generated for a friend server, for an entry that is being
+    /// Deletes what was generated for a friend server, for an entry that is being
     /// removed. Nothing outside the media root is ever touched.
     /// </summary>
     /// <param name="server">Friend server being removed.</param>
@@ -168,7 +160,9 @@ public class ImportedMediaCleaner
 
         if (IsInsideMediaRoot(folder))
         {
-            DeleteFolder(folder);
+            Guarded(Path.Combine(folder, MediaFileWriter.MoviesFolderName), GeneratedContent.RemoveDeclaredFolder);
+            Guarded(Path.Combine(folder, MediaFileWriter.ShowsFolderName), GeneratedContent.RemoveDeclaredFolder);
+            Guarded(folder, GeneratedContent.RemoveIfEmpty);
         }
     }
 
@@ -205,63 +199,20 @@ public class ImportedMediaCleaner
             && candidate[root.Length] == Path.DirectorySeparatorChar;
     }
 
-    private string[] SiblingsOf(string strmPath)
+    private void Guarded(string path, Action<string> remove)
     {
-        var folder = Path.GetDirectoryName(strmPath);
-        var baseName = Path.GetFileNameWithoutExtension(strmPath);
-
-        if (string.IsNullOrEmpty(folder) || string.IsNullOrEmpty(baseName) || !Directory.Exists(folder))
-        {
-            return [];
-        }
-
-        try
-        {
-            return Directory.EnumerateFiles(folder)
-                .Where(file =>
-                {
-                    var name = Path.GetFileName(file);
-                    return name.StartsWith(baseName + ".", StringComparison.Ordinal)
-                        || name.StartsWith(baseName + "-", StringComparison.Ordinal);
-                })
-                .ToArray();
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            _logger.LogError(ex, "[ShadowLibrary] Could not list the files of {Path}.", strmPath);
-            return [];
-        }
-    }
-
-    private void DeleteFile(string path)
-    {
-        try
-        {
-            if (File.Exists(path))
-            {
-                File.Delete(path);
-            }
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            _logger.LogError(ex, "[ShadowLibrary] Could not delete {File}.", path);
-        }
-    }
-
-    private void DeleteFolder(string folderPath)
-    {
-        if (string.IsNullOrEmpty(folderPath) || !Directory.Exists(folderPath))
+        if (string.IsNullOrEmpty(path))
         {
             return;
         }
 
         try
         {
-            Directory.Delete(folderPath, true);
+            remove(path);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            _logger.LogError(ex, "[ShadowLibrary] Could not delete {Folder}.", folderPath);
+            _logger.LogError(ex, "[ShadowLibrary] Could not remove {Path}.", path);
         }
     }
 

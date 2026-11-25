@@ -103,6 +103,9 @@ it in one piece: detach, move, rewrite the stored paths, reattach.
   friend server already knows, ffprobe only when it knows none.
 - [ImportedMediaCleaner.cs](Jellyfin.Plugin.ShadowLibrary/Sync/ImportedMediaCleaner.cs),
   removal, of one item, of a series, or of everything from one friend server.
+- [GeneratedContent.cs](Jellyfin.Plugin.ShadowLibrary/Sync/GeneratedContent.cs), what tells a
+  generated file from one of the user's. A title folder that holds anything else is never
+  written to, and only generated files are deleted.
 - [ImportedItemStore.cs](Jellyfin.Plugin.ShadowLibrary/Storage/ImportedItemStore.cs), the
   SQLite store.
 
@@ -156,9 +159,8 @@ episode from the series key plus its season and episode numbers.
 
 1. An item the friend server could not identify is skipped, there is nothing to compare.
 2. An item the user already holds natively is skipped. `LocalCatalogue` reads the local
-   libraries once per run and leaves out everything under the media root or played through
-   the relay, which is how a previous import does not count as a local copy. The relay URL
-   covers a media root declared a second time under another mount.
+   libraries once per run and leaves out everything played through the relay, which is how a
+   previous import does not count as a local copy, whatever mount it was scanned from.
 3. An item another friend server already provides is skipped. The first server of the run to
    claim a key keeps it. Ownership is stored on the row, in `claim_keys`, and seeded back at
    the start of the next run, so a friend server that happens to be unreachable today does not

@@ -29,23 +29,20 @@ public class LocalCatalogue
     private readonly HashSet<string> _episodeKeys = new(StringComparer.Ordinal);
 
     private readonly ILibraryManager _libraryManager;
-    private readonly string _mediaRoot;
 
-    private LocalCatalogue(ILibraryManager libraryManager, string mediaRootPath)
+    private LocalCatalogue(ILibraryManager libraryManager)
     {
         _libraryManager = libraryManager;
-        _mediaRoot = Path.TrimEndingDirectorySeparator(mediaRootPath ?? string.Empty);
     }
 
     /// <summary>
     /// Reads the local movies and series once, leaving out everything ShadowLibrary generated.
     /// </summary>
     /// <param name="libraryManager">Local library manager.</param>
-    /// <param name="mediaRootPath">Root folder holding the generated media.</param>
     /// <returns>The catalogue.</returns>
-    public static LocalCatalogue Build(ILibraryManager libraryManager, string mediaRootPath)
+    public static LocalCatalogue Build(ILibraryManager libraryManager)
     {
-        var catalogue = new LocalCatalogue(libraryManager, mediaRootPath);
+        var catalogue = new LocalCatalogue(libraryManager);
 
         foreach (var movie in libraryManager.GetItemList(new InternalItemsQuery
         {
@@ -53,7 +50,7 @@ public class LocalCatalogue
             Recursive = true
         }))
         {
-            if (!catalogue.IsOurs(movie))
+            if (!ImportedItems.IsImported(movie))
             {
                 catalogue._movieKeys.UnionWith(KeysOf(movie.ProviderIds));
             }
@@ -65,11 +62,6 @@ public class LocalCatalogue
             Recursive = true
         }))
         {
-            if (catalogue.IsOurs(series))
-            {
-                continue;
-            }
-
             foreach (var key in KeysOf(series.ProviderIds))
             {
                 if (!catalogue._seriesByKey.TryGetValue(key, out var ids))
@@ -226,7 +218,7 @@ public class LocalCatalogue
                 }))
                 {
                     if (item is not Episode episode
-                        || IsOurs(episode)
+                        || ImportedItems.IsImported(episode)
                         || episode.ParentIndexNumber is null
                         || episode.IndexNumber is null)
                     {
@@ -239,12 +231,6 @@ public class LocalCatalogue
             }
         }
     }
-
-    private bool IsOurs(BaseItem item)
-        => ImportedItems.IsImported(item)
-            || (_mediaRoot.Length > 0
-                && !string.IsNullOrEmpty(item.Path)
-                && item.Path.StartsWith(_mediaRoot, StringComparison.OrdinalIgnoreCase));
 
     private static IEnumerable<string> KeysOf(Dictionary<string, string>? providerIds)
     {
