@@ -7,4 +7,10 @@
              is what scripts/package.sh does -->
         <Version>0.0.0.0</Version>
     </PropertyGroup>
+
+    <!-- a plain dotnet build, so a DLL copied by hand does not show up as 0.0.0.0 -->
+    <PropertyGroup Condition="'$(Version)' == '0.0.0.0' And Exists('$(MSBuildThisFileDirectory)build.yaml')">
+        <BuildYaml>$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)build.yaml'))</BuildYaml>
+        <Version>$([System.Text.RegularExpressions.Regex]::Match($(BuildYaml), 'version: "([0-9.]+)"').Groups[1].Value)</Version>
+    </PropertyGroup>
 </Project>
