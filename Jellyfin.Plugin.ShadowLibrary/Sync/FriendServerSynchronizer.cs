@@ -236,6 +236,7 @@ public class FriendServerSynchronizer
         // item back then. The scan has just run, so this is where the match happens, and the
         // inspection right after has the identifiers it needs.
         ResolveScannedItems(server.Id);
+        await _refresher.DropCopiedCollectionIdsAsync(cancellationToken).ConfigureAwait(false);
 
         if (server.MetadataImported != importMetadata)
         {
