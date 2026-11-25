@@ -251,25 +251,6 @@ public class MediaProbe
         await video.UpdateToRepositoryAsync(ItemUpdateType.MetadataImport, cancellationToken).ConfigureAwait(false);
     }
 
-    // takes a Video up to 10.11 and a BaseItem from 12.0, one binary serves both
-    private void SaveChapters(Video video, IReadOnlyList<ChapterInfo> chapters)
-    {
-        var method = Array.Find(
-            typeof(IChapterManager).GetMethods(),
-            m => m.Name == nameof(IChapterManager.SaveChapters)
-                && m.GetParameters() is { Length: 2 } parameters
-                && parameters[0].ParameterType.IsAssignableFrom(typeof(Video))
-                && parameters[1].ParameterType.IsAssignableFrom(typeof(IReadOnlyList<ChapterInfo>)));
-
-        if (method is null)
-        {
-            _logger.LogWarning("[ShadowLibrary] This Jellyfin version offers no known way to store chapters.");
-            return;
-        }
-
-        method.Invoke(_chapterManager, [video, chapters]);
-    }
-
     private async Task<int> ProbeLocallyAsync(List<Video> videos, CancellationToken cancellationToken)
     {
         var probed = 0;
@@ -307,5 +288,24 @@ public class MediaProbe
         }
 
         return probed;
+    }
+
+    // takes a Video up to 10.11 and a BaseItem from 12.0, one binary serves both
+    private void SaveChapters(Video video, IReadOnlyList<ChapterInfo> chapters)
+    {
+        var method = Array.Find(
+            typeof(IChapterManager).GetMethods(),
+            m => m.Name == nameof(IChapterManager.SaveChapters)
+                && m.GetParameters() is { Length: 2 } parameters
+                && parameters[0].ParameterType.IsAssignableFrom(typeof(Video))
+                && parameters[1].ParameterType.IsAssignableFrom(typeof(IReadOnlyList<ChapterInfo>)));
+
+        if (method is null)
+        {
+            _logger.LogWarning("[ShadowLibrary] This Jellyfin version offers no known way to store chapters.");
+            return;
+        }
+
+        method.Invoke(_chapterManager, [video, chapters]);
     }
 }
