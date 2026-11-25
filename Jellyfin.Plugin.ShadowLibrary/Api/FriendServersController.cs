@@ -5,7 +5,6 @@ using Jellyfin.Plugin.ShadowLibrary.Remote;
 using Jellyfin.Plugin.ShadowLibrary.Security;
 using Jellyfin.Plugin.ShadowLibrary.Sync;
 using MediaBrowser.Common.Api;
-using MediaBrowser.Controller.Library;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -27,10 +26,9 @@ public class FriendServersController : ControllerBase
 
     private readonly FriendServerClient _client;
     private readonly SecretStore _secretStore;
-    private readonly ImportedMediaCleaner _cleaner;
+    private readonly FriendServerSynchronizer _synchronizer;
     private readonly LibraryAttacher _attacher;
     private readonly MediaFileWriter _writer;
-    private readonly ILibraryManager _libraryManager;
     private readonly ILogger<FriendServersController> _logger;
 
     /// <summary>
@@ -38,26 +36,23 @@ public class FriendServersController : ControllerBase
     /// </summary>
     /// <param name="client">Friend server client.</param>
     /// <param name="secretStore">Credential encryption.</param>
-    /// <param name="cleaner">Imported media cleaner.</param>
+    /// <param name="synchronizer">Friend server synchronizer.</param>
     /// <param name="attacher">Library attacher.</param>
     /// <param name="writer">File writer, asked for the effective stream URL.</param>
-    /// <param name="libraryManager">Local library manager.</param>
     /// <param name="logger">Logger.</param>
     public FriendServersController(
         FriendServerClient client,
         SecretStore secretStore,
-        ImportedMediaCleaner cleaner,
+        FriendServerSynchronizer synchronizer,
         LibraryAttacher attacher,
         MediaFileWriter writer,
-        ILibraryManager libraryManager,
         ILogger<FriendServersController> logger)
     {
         _client = client;
         _secretStore = secretStore;
-        _cleaner = cleaner;
+        _synchronizer = synchronizer;
         _attacher = attacher;
         _writer = writer;
-        _libraryManager = libraryManager;
         _logger = logger;
     }
 
@@ -244,17 +239,19 @@ public class FriendServersController : ControllerBase
             return NotFound();
         }
 
-        // the folders go away, so the libraries must stop pointing at them
-        var detached = _attacher.Detach(removed);
-
-        var discarded = _cleaner.RemoveAllForServer(id);
-        _cleaner.RemoveServerFolder(removed);
-        if (discarded > 0 || detached)
+        // not awaited, it waits for a library scan
+        _ = Task.Run(async () =>
         {
-            _libraryManager.QueueLibraryScan();
-        }
+            try
+            {
+                await _synchronizer.RemoveServerAsync(removed).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[ShadowLibrary] Could not remove everything imported from {Name}.", removed.Name);
+            }
+        });
 
-        _logger.LogInformation("[ShadowLibrary] Removed friend server {Id} and its {Count} imported items.", id, discarded);
         return NoContent();
     }
 

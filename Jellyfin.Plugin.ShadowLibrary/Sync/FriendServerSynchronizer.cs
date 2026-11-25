@@ -124,6 +124,8 @@ public class FriendServerSynchronizer
 
             if (report.Removed > 0)
             {
+                _cleaner.RemoveEmptySeries(server.Id);
+                _cleaner.EnsureMarkers(MediaFileWriter.ResolveGeneratedFolder(server));
                 await ScanAsync(cancellationToken).ConfigureAwait(false);
             }
 
@@ -145,6 +147,8 @@ public class FriendServerSynchronizer
             known = _store.GetByFriendServer(server.Id)
                 .ToDictionary(i => i.RemoteItemId, StringComparer.Ordinal);
         }
+
+        changed |= _cleaner.EnsureMarkers(serverFolder);
 
         // done before writing anything, so the scan at the end of the cycle already covers
         // the generated folders and the user never has to declare them by hand
@@ -221,6 +225,32 @@ public class FriendServerSynchronizer
 
         _logger.LogInformation("[ShadowLibrary] Synchronised {Name}. {Report}", server.Name, report);
         return report;
+    }
+
+    /// <summary>
+    /// Removes everything imported from a friend server that has left the configuration.
+    /// </summary>
+    /// <param name="server">Removed friend server.</param>
+    /// <returns>A task that ends once Jellyfin has dropped the items.</returns>
+    public async Task RemoveServerAsync(FriendServer server)
+    {
+        var folder = MediaFileWriter.ResolveGeneratedFolder(server);
+        _cleaner.EnsureMarkers(folder);
+        var removed = _cleaner.RemoveAllForServer(server.Id);
+
+        // Jellyfin only drops the items of a folder that is still declared and not empty
+        await ScanAsync(CancellationToken.None).ConfigureAwait(false);
+
+        // added again under the same name during the scan
+        var reused = ConfigurationStore.Current.FriendServers
+            .Any(s => string.Equals(MediaFileWriter.ResolveGeneratedFolder(s), folder, StringComparison.Ordinal));
+        if (!reused)
+        {
+            _attacher.Detach(server);
+            _cleaner.RemoveServerFolder(server);
+        }
+
+        _logger.LogInformation("[ShadowLibrary] Removed {Count} items imported from {Name}.", removed, server.Name);
     }
 
     /// <summary>
