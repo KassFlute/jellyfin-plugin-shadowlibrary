@@ -306,6 +306,17 @@
                 });
             }
 
+            function showFirstSync(name) {
+                showNotice(name + ' is added', [
+                    'Nothing is imported yet. To start now, go to Dashboard > Scheduled Tasks and run '
+                        + '"Synchronise friend servers", in the ShadowLibrary section.',
+                    'Otherwise it runs on its own every six hours. The first run can take a while.'
+                ], [
+                    { label: 'Open Scheduled Tasks', onClick: function () { Dashboard.navigate('dashboard/tasks'); } },
+                    { label: 'Later' }
+                ]);
+            }
+
             function describeServer(response) {
                 if (!response.Success) {
                     return response.Message;
@@ -653,6 +664,8 @@
                     ? ApiClient.getUrl('ShadowLibrary/FriendServers/' + editingId)
                     : ApiClient.getUrl('ShadowLibrary/FriendServers');
 
+                var added = !editingId && payload.Enabled;
+
                 Dashboard.showLoadingMsg();
                 ApiClient.ajax({
                     type: 'POST',
@@ -665,8 +678,11 @@
                     return loadServers();
                 }).then(function () {
                     return checkMediaRoot();
-                }).then(function () {
+                }).then(function (usable) {
                     Dashboard.hideLoadingMsg();
+                    if (usable && added) {
+                        showFirstSync(payload.Name);
+                    }
                 }, function (error) {
                     Dashboard.hideLoadingMsg();
                     Dashboard.alert('Could not save: ' + describeError(error));
@@ -738,7 +754,9 @@
             });
 
             document.addEventListener('keydown', function (event) {
-                if (event.key === 'Escape' && !$('SlBackdrop').classList.contains('hide')) {
+                if (event.key === 'Escape' && !$('SlNotice').classList.contains('hide')) {
+                    show($('SlNotice'), false);
+                } else if (event.key === 'Escape' && !$('SlBackdrop').classList.contains('hide')) {
                     closeEditor();
                 }
             });
