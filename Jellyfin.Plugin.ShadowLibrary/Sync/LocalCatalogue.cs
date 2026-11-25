@@ -241,9 +241,10 @@ public class LocalCatalogue
     }
 
     private bool IsOurs(BaseItem item)
-        => _mediaRoot.Length > 0
-            && !string.IsNullOrEmpty(item.Path)
-            && item.Path.StartsWith(_mediaRoot, StringComparison.OrdinalIgnoreCase);
+        => ImportedItems.IsImported(item)
+            || (_mediaRoot.Length > 0
+                && !string.IsNullOrEmpty(item.Path)
+                && item.Path.StartsWith(_mediaRoot, StringComparison.OrdinalIgnoreCase));
 
     private static IEnumerable<string> KeysOf(Dictionary<string, string>? providerIds)
     {

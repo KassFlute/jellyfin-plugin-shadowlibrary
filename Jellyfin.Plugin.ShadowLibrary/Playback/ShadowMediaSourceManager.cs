@@ -1,5 +1,6 @@
 using System.Globalization;
 using Jellyfin.Database.Implementations.Entities;
+using Jellyfin.Plugin.ShadowLibrary.Sync;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.LiveTv;
@@ -27,8 +28,6 @@ public sealed class ShadowMediaSourceManager : IMediaSourceManager
     // enough for ffmpeg to find the video and audio parameters. Image subtitles without a
     // frame in that window lose their size and burn-in aborts, see CanShortenAnalysis
     private const int AnalyzeDurationMs = 10_000;
-
-    private const string RelayPathMarker = "/ShadowLibrary/stream/";
 
     private readonly IMediaSourceManager _inner;
     private readonly IHttpContextAccessor? _httpContextAccessor;
@@ -59,7 +58,7 @@ public sealed class ShadowMediaSourceManager : IMediaSourceManager
         bool enablePathSubstitution,
         CancellationToken cancellationToken)
     {
-        if (!IsImported(item))
+        if (!ImportedItems.IsImported(item))
         {
             return await _inner.GetPlaybackMediaSources(item, user, allowMediaProbe, enablePathSubstitution, cancellationToken).ConfigureAwait(false);
         }
@@ -92,7 +91,7 @@ public sealed class ShadowMediaSourceManager : IMediaSourceManager
         CancellationToken cancellationToken)
     {
         var source = await _inner.GetMediaSource(item, mediaSourceId, liveStreamId, enablePathSubstitution, cancellationToken).ConfigureAwait(false);
-        if (IsImported(item) && CanShortenAnalysis(item))
+        if (ImportedItems.IsImported(item) && CanShortenAnalysis(item))
         {
             ShortenAnalysis(source);
         }
@@ -165,11 +164,6 @@ public sealed class ShadowMediaSourceManager : IMediaSourceManager
     /// <inheritdoc />
     public Task AddMediaInfoWithProbe(MediaSourceInfo mediaSource, bool isAudio, string cacheKey, bool addProbeDelay, bool isLiveStream, CancellationToken cancellationToken)
         => _inner.AddMediaInfoWithProbe(mediaSource, isAudio, cacheKey, addProbeDelay, isLiveStream, cancellationToken);
-
-    // the .strm content is the relay URL, nothing else points there
-    private static bool IsImported(BaseItem? item)
-        => item is Video { IsShortcut: true } video
-            && video.ShortcutPath?.Contains(RelayPathMarker, StringComparison.OrdinalIgnoreCase) == true;
 
     private static void ShortenAnalysis(MediaSourceInfo? source)
     {

@@ -3,6 +3,7 @@ using System.Net.Mime;
 using Jellyfin.Data.Enums;
 using Jellyfin.Plugin.ShadowLibrary.Remote;
 using Jellyfin.Plugin.ShadowLibrary.Storage;
+using Jellyfin.Plugin.ShadowLibrary.Sync;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Net;
@@ -87,7 +88,7 @@ public class ShadowLibraryController : ControllerBase
         // the exclusion cannot be pushed into the query, so paging happens after filtering
         var native = _libraryManager
             .GetItemList(query)
-            .Where(item => !imported.Contains(item.Id))
+            .Where(item => !imported.Contains(item.Id) && !ImportedItems.IsImported(item))
             .Select(item => item.Id.ToString("N", CultureInfo.InvariantCulture))
             .ToArray();
 
