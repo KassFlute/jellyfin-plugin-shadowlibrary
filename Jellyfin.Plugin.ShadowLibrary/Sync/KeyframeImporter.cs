@@ -66,16 +66,17 @@ public class KeyframeImporter
         ProgressRange progress,
         CancellationToken cancellationToken)
     {
-        var pending = new List<(ImportedItem Item, Video Video)>();
+        var local = ImportedItems.Find(_libraryManager);
+        var pending = new List<(ImportedItem Item, Video[] Videos)>();
         foreach (var item in items)
         {
             // the container comes with the tracks, see MediaProbe
-            if (item.LocalItemId is Guid id
-                && _libraryManager.GetItemById(id) is Video video
-                && IsMatroska(video.Container)
-                && _keyframeManager.GetKeyframeData(video.Id).Count == 0)
+            var videos = local[item.Id]
+                .Where(v => IsMatroska(v.Container) && _keyframeManager.GetKeyframeData(v.Id).Count == 0)
+                .ToArray();
+            if (videos.Length > 0)
             {
-                pending.Add((item, video));
+                pending.Add((item, videos));
             }
         }
 
@@ -99,7 +100,8 @@ public class KeyframeImporter
             }
 
             progress.Report(i, pending.Count);
-            var (item, video) = pending[i];
+            var (item, videos) = pending[i];
+            var video = videos[0];
             try
             {
                 var keyframes = await MatroskaCueReader.ReadAsync(
@@ -120,7 +122,11 @@ public class KeyframeImporter
                     continue;
                 }
 
-                await _keyframeManager.SaveKeyframeDataAsync(video.Id, keyframes, cancellationToken).ConfigureAwait(false);
+                foreach (var target in videos)
+                {
+                    await _keyframeManager.SaveKeyframeDataAsync(target.Id, keyframes, cancellationToken).ConfigureAwait(false);
+                }
+
                 imported++;
             }
             catch (Exception ex) when (ex is HttpRequestException or InvalidDataException or IOException

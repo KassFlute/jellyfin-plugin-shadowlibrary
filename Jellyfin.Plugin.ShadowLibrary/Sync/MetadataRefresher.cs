@@ -1,4 +1,3 @@
-using Jellyfin.Data.Enums;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
@@ -47,20 +46,11 @@ public class MetadataRefresher
     /// <returns>A task that ends once everything is queued.</returns>
     public async Task QueueAsync(IEnumerable<Guid> importedIds, bool fromNfo, CancellationToken cancellationToken)
     {
-        var keys = importedIds.Select(id => id.ToString("N")).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var items = ImportedItems.Find(_libraryManager);
         var targets = new HashSet<Guid>();
 
-        foreach (var item in _libraryManager.GetItemList(new InternalItemsQuery
+        foreach (var item in importedIds.SelectMany(id => items[id]))
         {
-            IncludeItemTypes = [BaseItemKind.Movie, BaseItemKind.Episode],
-            Recursive = true
-        }))
-        {
-            if (!ImportedItems.IsImported(item) || !keys.Contains(ImportedItems.KeyOf((Video)item)))
-            {
-                continue;
-            }
-
             targets.Add(item.Id);
             if (item is Episode episode)
             {
