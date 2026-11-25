@@ -57,11 +57,13 @@ public class KeyframeImporter
     /// </summary>
     /// <param name="server">Friend server the items come from.</param>
     /// <param name="items">Imported items to consider.</param>
+    /// <param name="progress">Progress of this step.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>How many items got their keyframes.</returns>
     public async Task<int> ImportAsync(
         FriendServer server,
         IEnumerable<ImportedItem> items,
+        ProgressRange progress,
         CancellationToken cancellationToken)
     {
         var pending = new List<(ImportedItem Item, Video Video)>();
@@ -96,6 +98,7 @@ public class KeyframeImporter
                 await Task.Delay(Pause, cancellationToken).ConfigureAwait(false);
             }
 
+            progress.Report(i, pending.Count);
             var (item, video) = pending[i];
             try
             {

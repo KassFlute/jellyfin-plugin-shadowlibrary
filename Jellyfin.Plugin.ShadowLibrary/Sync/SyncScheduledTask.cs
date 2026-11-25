@@ -83,11 +83,12 @@ public class SyncScheduledTask : IScheduledTask, IConfigurableScheduledTask
         for (var i = 0; i < servers.Length; i++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            progress.Report(i * 100d / servers.Length);
+            var share = new ProgressRange(progress, i * 100d / servers.Length, (i + 1) * 100d / servers.Length);
 
             try
             {
-                await _synchronizer.SyncAsync(servers[i], local, cancellationToken).ConfigureAwait(false);
+                share.Report(0);
+                await _synchronizer.SyncAsync(servers[i], local, share, cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
