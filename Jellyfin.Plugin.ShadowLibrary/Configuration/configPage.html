@@ -70,6 +70,26 @@
                 </div>
 
                 <div class="inputContainer">
+                    <label class="emby-checkbox-label">
+                        <input id="SlImportMetadata" type="checkbox" is="emby-checkbox" />
+                        <span>Use the titles and images of the friend server</span>
+                    </label>
+                    <details class="fieldDescription">
+                        <summary style="cursor:pointer;">Which one should I choose?</summary>
+                        <p><b>On</b> (recommended). Imported media looks the way it does on your
+                            friend's server: same titles, descriptions and images, in their
+                            language. Works at once, even when a title is hard to identify.</p>
+                        <p><b>Off</b>. Only the TMDb and IMDb ids are imported. Each of your libraries
+                            then fetches titles and images itself, in its own language. Choose this
+                            when your friend's server is in another language than yours. The
+                            library must have a metadata downloader enabled, and Nfo among its
+                            metadata readers.</p>
+                        <p>Changing this takes effect at the next synchronisation. Edits you made by
+                            hand to imported media are replaced.</p>
+                    </details>
+                </div>
+
+                <div class="inputContainer">
                     <label class="inputLabel inputLabelUnfocused" for="SlThreshold">
                         Remove unreachable items after (hours)
                     </label>
@@ -268,6 +288,7 @@
                 Dashboard.showLoadingMsg();
                 ApiClient.getPluginConfiguration(pluginId).then(function (config) {
                     config.MediaRootPath = $('SlMediaRootPath').value.trim();
+                    config.ImportMetadata = $('SlImportMetadata').checked;
                     config.UnavailabilityThresholdHours = parseInt($('SlThreshold').value, 10) || 48;
                     config.LocalApiUrl = $('SlLocalApiUrl').value.trim();
                     return ApiClient.updatePluginConfiguration(pluginId, config);
@@ -679,6 +700,7 @@
 
                 ApiClient.getPluginConfiguration(pluginId).then(function (config) {
                     $('SlMediaRootPath').value = config.MediaRootPath;
+                    $('SlImportMetadata').checked = config.ImportMetadata;
                     $('SlThreshold').value = config.UnavailabilityThresholdHours;
                     $('SlLocalApiUrl').value = config.LocalApiUrl || '';
                     return loadStreamBaseUrl();

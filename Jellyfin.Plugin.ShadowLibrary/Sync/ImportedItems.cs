@@ -24,4 +24,15 @@ public static class ImportedItems
     public static bool IsImported(BaseItem? item)
         => item is Video { IsShortcut: true } video
             && video.ShortcutPath?.Contains(RelayPathMarker, StringComparison.OrdinalIgnoreCase) == true;
+
+    /// <summary>
+    /// Reads the plugin side identifier out of the relay URL of an imported item.
+    /// </summary>
+    /// <param name="video">Imported item.</param>
+    /// <returns>The identifier, as written in the URL.</returns>
+    public static string KeyOf(Video video)
+    {
+        var path = (video.ShortcutPath ?? string.Empty).Trim().Split('?')[0];
+        return Path.GetFileNameWithoutExtension(path);
+    }
 }

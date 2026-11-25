@@ -290,38 +290,44 @@ public class MediaFileWriter
         var strmPath = Path.Combine(folderPath, baseName + ".strm");
         var nfoPath = Path.Combine(folderPath, baseName + ".nfo");
 
-        await File.WriteAllTextAsync(strmPath, BuildStreamUrl(itemKey, movie.Container), cancellationToken).ConfigureAwait(false);
+        await EnsureStreamUrlAsync(strmPath, itemKey, movie.Container, cancellationToken).ConfigureAwait(false);
+
+        var full = ConfigurationStore.Current.ImportMetadata;
+        var wasFull = HoldsMetadata(nfoPath);
 
         await WriteNfoAsync(nfoPath, "movie", async writer =>
         {
-            await WriteIfSetAsync(writer, "title", movie.Name).ConfigureAwait(false);
-            await WriteIfSetAsync(writer, "originaltitle", movie.OriginalTitle).ConfigureAwait(false);
-            await WriteIfSetAsync(writer, "sorttitle", movie.SortName).ConfigureAwait(false);
-            await WriteIfSetAsync(writer, "plot", movie.Overview).ConfigureAwait(false);
-            await WriteIfSetAsync(writer, "mpaa", movie.OfficialRating).ConfigureAwait(false);
-            await WriteNumberAsync(writer, "year", movie.ProductionYear).ConfigureAwait(false);
-            await WriteDateAsync(writer, "premiered", movie.PremiereDate).ConfigureAwait(false);
-            await WriteRatingAsync(writer, movie.CommunityRating).ConfigureAwait(false);
-            await WriteRuntimeAsync(writer, movie.RunTimeTicks).ConfigureAwait(false);
-
-            foreach (var tagline in movie.Taglines ?? [])
+            if (full)
             {
-                await WriteIfSetAsync(writer, "tagline", tagline).ConfigureAwait(false);
-            }
+                await WriteIfSetAsync(writer, "title", movie.Name).ConfigureAwait(false);
+                await WriteIfSetAsync(writer, "originaltitle", movie.OriginalTitle).ConfigureAwait(false);
+                await WriteIfSetAsync(writer, "sorttitle", movie.SortName).ConfigureAwait(false);
+                await WriteIfSetAsync(writer, "plot", movie.Overview).ConfigureAwait(false);
+                await WriteIfSetAsync(writer, "mpaa", movie.OfficialRating).ConfigureAwait(false);
+                await WriteNumberAsync(writer, "year", movie.ProductionYear).ConfigureAwait(false);
+                await WriteDateAsync(writer, "premiered", movie.PremiereDate).ConfigureAwait(false);
+                await WriteRatingAsync(writer, movie.CommunityRating).ConfigureAwait(false);
+                await WriteRuntimeAsync(writer, movie.RunTimeTicks).ConfigureAwait(false);
 
-            foreach (var genre in movie.Genres ?? [])
-            {
-                await WriteIfSetAsync(writer, "genre", genre).ConfigureAwait(false);
-            }
+                foreach (var tagline in movie.Taglines ?? [])
+                {
+                    await WriteIfSetAsync(writer, "tagline", tagline).ConfigureAwait(false);
+                }
 
-            foreach (var studio in movie.Studios ?? [])
-            {
-                await WriteIfSetAsync(writer, "studio", studio.Name).ConfigureAwait(false);
+                foreach (var genre in movie.Genres ?? [])
+                {
+                    await WriteIfSetAsync(writer, "genre", genre).ConfigureAwait(false);
+                }
+
+                foreach (var studio in movie.Studios ?? [])
+                {
+                    await WriteIfSetAsync(writer, "studio", studio.Name).ConfigureAwait(false);
+                }
             }
 
             await WriteOriginTagAsync(writer, server).ConfigureAwait(false);
             await WriteProviderIdsAsync(writer, movie.ProviderIds).ConfigureAwait(false);
-            await WritePeopleAsync(writer, movie.People).ConfigureAwait(false);
+            await WritePeopleAsync(writer, full ? movie.People : null).ConfigureAwait(false);
         }).ConfigureAwait(false);
 
         cancellationToken.ThrowIfCancellationRequested();
@@ -333,6 +339,8 @@ public class MediaFileWriter
             movie.BackdropImageTags?.Length > 0,
             movie.ImageTags,
             session,
+            full,
+            wasFull,
             refreshImages,
             cancellationToken).ConfigureAwait(false);
 
@@ -360,31 +368,37 @@ public class MediaFileWriter
         EnsureWritable(folderPath);
         Directory.CreateDirectory(folderPath);
 
+        var full = ConfigurationStore.Current.ImportMetadata;
+        var wasFull = HoldsMetadata(Path.Combine(folderPath, "tvshow.nfo"));
+
         await WriteNfoAsync(Path.Combine(folderPath, "tvshow.nfo"), "tvshow", async writer =>
         {
-            await WriteIfSetAsync(writer, "title", series.Name).ConfigureAwait(false);
-            await WriteIfSetAsync(writer, "originaltitle", series.OriginalTitle).ConfigureAwait(false);
-            await WriteIfSetAsync(writer, "sorttitle", series.SortName).ConfigureAwait(false);
-            await WriteIfSetAsync(writer, "plot", series.Overview).ConfigureAwait(false);
-            await WriteIfSetAsync(writer, "mpaa", series.OfficialRating).ConfigureAwait(false);
-            await WriteIfSetAsync(writer, "status", series.Status).ConfigureAwait(false);
-            await WriteNumberAsync(writer, "year", series.ProductionYear).ConfigureAwait(false);
-            await WriteDateAsync(writer, "premiered", series.PremiereDate).ConfigureAwait(false);
-            await WriteRatingAsync(writer, series.CommunityRating).ConfigureAwait(false);
-
-            foreach (var genre in series.Genres ?? [])
+            if (full)
             {
-                await WriteIfSetAsync(writer, "genre", genre).ConfigureAwait(false);
-            }
+                await WriteIfSetAsync(writer, "title", series.Name).ConfigureAwait(false);
+                await WriteIfSetAsync(writer, "originaltitle", series.OriginalTitle).ConfigureAwait(false);
+                await WriteIfSetAsync(writer, "sorttitle", series.SortName).ConfigureAwait(false);
+                await WriteIfSetAsync(writer, "plot", series.Overview).ConfigureAwait(false);
+                await WriteIfSetAsync(writer, "mpaa", series.OfficialRating).ConfigureAwait(false);
+                await WriteIfSetAsync(writer, "status", series.Status).ConfigureAwait(false);
+                await WriteNumberAsync(writer, "year", series.ProductionYear).ConfigureAwait(false);
+                await WriteDateAsync(writer, "premiered", series.PremiereDate).ConfigureAwait(false);
+                await WriteRatingAsync(writer, series.CommunityRating).ConfigureAwait(false);
 
-            foreach (var studio in series.Studios ?? [])
-            {
-                await WriteIfSetAsync(writer, "studio", studio.Name).ConfigureAwait(false);
+                foreach (var genre in series.Genres ?? [])
+                {
+                    await WriteIfSetAsync(writer, "genre", genre).ConfigureAwait(false);
+                }
+
+                foreach (var studio in series.Studios ?? [])
+                {
+                    await WriteIfSetAsync(writer, "studio", studio.Name).ConfigureAwait(false);
+                }
             }
 
             await WriteOriginTagAsync(writer, server).ConfigureAwait(false);
             await WriteProviderIdsAsync(writer, series.ProviderIds).ConfigureAwait(false);
-            await WritePeopleAsync(writer, series.People).ConfigureAwait(false);
+            await WritePeopleAsync(writer, full ? series.People : null).ConfigureAwait(false);
         }).ConfigureAwait(false);
 
         cancellationToken.ThrowIfCancellationRequested();
@@ -396,6 +410,8 @@ public class MediaFileWriter
             series.BackdropImageTags?.Length > 0,
             series.ImageTags,
             session,
+            full,
+            wasFull,
             refreshImages,
             cancellationToken).ConfigureAwait(false);
     }
@@ -429,19 +445,22 @@ public class MediaFileWriter
             throw new IOException(strmPath + " exists and was not generated by ShadowLibrary.");
         }
 
-        await File.WriteAllTextAsync(strmPath, BuildStreamUrl(itemKey, episode.Container), cancellationToken).ConfigureAwait(false);
+        await EnsureStreamUrlAsync(strmPath, itemKey, episode.Container, cancellationToken).ConfigureAwait(false);
+
+        var full = ConfigurationStore.Current.ImportMetadata;
+        var wasFull = HoldsMetadata(nfoPath);
 
         await WriteNfoAsync(nfoPath, "episodedetails", async writer =>
         {
-            await WriteIfSetAsync(writer, "title", episode.Name).ConfigureAwait(false);
+            await WriteIfSetAsync(writer, "title", full ? episode.Name : null).ConfigureAwait(false);
             await WriteNumberAsync(writer, "season", episode.ParentIndexNumber).ConfigureAwait(false);
             await WriteNumberAsync(writer, "episode", episode.IndexNumber).ConfigureAwait(false);
-            await WriteIfSetAsync(writer, "plot", episode.Overview).ConfigureAwait(false);
-            await WriteDateAsync(writer, "aired", episode.PremiereDate).ConfigureAwait(false);
-            await WriteRatingAsync(writer, episode.CommunityRating).ConfigureAwait(false);
-            await WriteRuntimeAsync(writer, episode.RunTimeTicks).ConfigureAwait(false);
+            await WriteIfSetAsync(writer, "plot", full ? episode.Overview : null).ConfigureAwait(false);
+            await WriteDateAsync(writer, "aired", full ? episode.PremiereDate : null).ConfigureAwait(false);
+            await WriteRatingAsync(writer, full ? episode.CommunityRating : null).ConfigureAwait(false);
+            await WriteRuntimeAsync(writer, full ? episode.RunTimeTicks : null).ConfigureAwait(false);
             await WriteProviderIdsAsync(writer, episode.ProviderIds).ConfigureAwait(false);
-            await WritePeopleAsync(writer, episode.People).ConfigureAwait(false);
+            await WritePeopleAsync(writer, full ? episode.People : null).ConfigureAwait(false);
         }).ConfigureAwait(false);
 
         cancellationToken.ThrowIfCancellationRequested();
@@ -454,6 +473,8 @@ public class MediaFileWriter
             false,
             episode.ImageTags,
             session,
+            full,
+            wasFull,
             refreshImages,
             cancellationToken).ConfigureAwait(false);
 
@@ -702,7 +723,15 @@ public class MediaFileWriter
     }
 
     private static string Hash(StringBuilder builder)
-        => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString())));
+    {
+        // only marked when off, so existing imports keep their hash
+        if (!ConfigurationStore.Current.ImportMetadata)
+        {
+            builder.Append("\nids only");
+        }
+
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString())));
+    }
 
     private static string GetOrCreateStreamKey()
     {
@@ -722,6 +751,9 @@ public class MediaFileWriter
             return config.StreamAccessKey;
         });
     }
+
+    private static bool HoldsMetadata(string nfoPath)
+        => File.Exists(nfoPath) && File.ReadAllText(nfoPath).Contains("<title>", StringComparison.Ordinal);
 
     private static void EnsureWritable(string folderPath)
     {
@@ -875,9 +907,27 @@ public class MediaFileWriter
         bool hasBackdrop,
         Dictionary<string, string>? imageTags,
         FriendServerSession session,
+        bool full,
+        bool wasFull,
         bool refreshImages,
         CancellationToken cancellationToken)
     {
+        if (!full)
+        {
+            // only on the switch, what is there afterwards is artwork Jellyfin saved
+            if (wasFull && GeneratedContent.HoldsOnlyGenerated(folderPath))
+            {
+                var names = tagged.Select(t => t.FileName);
+                foreach (var fileName in hasBackdrop ? names.Append("fanart.jpg") : names)
+                {
+                    File.Delete(Path.Combine(folderPath, fileName));
+                }
+            }
+
+            return;
+        }
+
+        refreshImages |= !wasFull;
         var wanted = tagged.Where(w => imageTags?.ContainsKey(w.ImageType) == true).ToList();
         if (hasBackdrop)
         {

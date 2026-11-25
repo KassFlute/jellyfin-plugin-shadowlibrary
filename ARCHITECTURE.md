@@ -152,6 +152,18 @@ When the listing fails, none of that happens. Every item starts or continues an
 unavailability countdown instead, and is only removed once it has been continuously
 unreachable past the configured threshold.
 
+## Metadata
+
+With `ImportMetadata` off, the `.nfo` only holds the provider ids, the origin tag and the season
+and episode numbers, and no artwork is written. Jellyfin still identifies the item for certain
+and fetches the rest from the providers of each library, in its language. Ids in the folder
+name would also work, but switching would rename every folder and recreate every item.
+
+A switch rewrites the files at the next cycle, then
+[MetadataRefresher](Jellyfin.Plugin.ShadowLibrary/Sync/MetadataRefresher.cs) refreshes the items
+under every mount. The setting is part of the metadata hash only when off, so existing imports
+are untouched.
+
 ## Deduplication
 
 Three rules, applied in that order, on a key built from the TMDb or IMDb id, and for an
