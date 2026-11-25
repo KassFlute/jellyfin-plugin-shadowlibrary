@@ -16,7 +16,7 @@ public class PluginConfiguration : BasePluginConfiguration
     /// <summary>
     /// Gets or sets the root folder where generated .strm files are written.
     /// </summary>
-    public string MediaRootPath { get; set; } = "/media/shadowlibrary";
+    public string MediaRootPath { get; set; } = string.Empty;
 
     /// <summary>
     /// Gets or sets the address the generated .strm files point at. Empty means the address

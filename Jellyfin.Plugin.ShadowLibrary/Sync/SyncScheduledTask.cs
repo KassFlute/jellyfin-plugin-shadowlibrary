@@ -67,6 +67,17 @@ public class SyncScheduledTask : IScheduledTask, IConfigurableScheduledTask
             return;
         }
 
+        _logger.LogInformation("[ShadowLibrary] Synchronising {Count} friend server(s).", servers.Length);
+
+        // before anything else, so a folder that is gone or read only removes nothing and
+        // fails the task once instead of once per item
+        var problem = MediaRoot.CheckConfigured();
+        if (problem is not null)
+        {
+            _logger.LogError("[ShadowLibrary] The root folder for imported media cannot be used. {Problem}", problem);
+            throw new InvalidOperationException("The root folder for imported media cannot be used. " + problem);
+        }
+
         var local = _synchronizer.BuildLocalCatalogue();
 
         for (var i = 0; i < servers.Length; i++)

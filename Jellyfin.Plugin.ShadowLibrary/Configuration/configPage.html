@@ -64,7 +64,8 @@
                     </label>
                     <input id="SlMediaRootPath" type="text" is="emby-input" />
                     <div class="fieldDescription">
-                        Must be writable by the user running Jellyfin.
+                        Where the placeholder files go. Jellyfin must be able to write there, which is
+                        checked when you save. Leave empty for the default.
                     </div>
                 </div>
 
@@ -163,6 +164,14 @@
         </div>
     </div>
 
+    <div id="SlNotice" class="slBackdrop hide">
+        <div class="slDialog" role="alertdialog" aria-labelledby="SlNoticeTitle">
+            <h2 id="SlNoticeTitle" style="margin-top:0;"></h2>
+            <div id="SlNoticeBody"></div>
+            <div class="slActions" id="SlNoticeActions"></div>
+        </div>
+    </div>
+
     <script type="text/javascript">
         (function () {
             var pluginId = 'a61f78e8-dd46-4eda-9c7b-b5db55348d17';
@@ -190,6 +199,90 @@
                     return 'unknown error';
                 }
                 return error.statusText || error.message || String(error);
+            }
+
+            function showNotice(title, paragraphs, buttons) {
+                $('SlNoticeTitle').textContent = title;
+
+                var body = $('SlNoticeBody');
+                body.textContent = '';
+                paragraphs.forEach(function (text) {
+                    var p = document.createElement('p');
+                    p.style.overflowWrap = 'anywhere';
+                    p.textContent = text;
+                    body.appendChild(p);
+                });
+
+                var actions = $('SlNoticeActions');
+                actions.textContent = '';
+                buttons.forEach(function (button) {
+                    actions.appendChild(actionButton(button.label, function () {
+                        show($('SlNotice'), false);
+                        if (button.onClick) {
+                            button.onClick();
+                        }
+                    }));
+                });
+
+                show($('SlNotice'), true);
+                actions.lastChild.focus();
+            }
+
+            // resolves to true when the folder can be used, explains what to do otherwise
+            function checkMediaRoot() {
+                return ApiClient.ajax({
+                    type: 'POST',
+                    url: ApiClient.getUrl('ShadowLibrary/FriendServers/MediaRoot'),
+                    dataType: 'json'
+                }).then(function (result) {
+                    if (!result.Problem) {
+                        return true;
+                    }
+
+                    var buttons = [{ label: 'Close' }];
+                    var paragraphs = [
+                        result.Problem,
+                        'Nothing can be imported until this is fixed. Either pick a folder Jellyfin can '
+                            + 'write to, or give that user write access to this one. In Docker, the path is '
+                            + 'the one inside the container.'
+                    ];
+
+                    if (result.Path !== result.DefaultPath) {
+                        paragraphs.push('The simplest way out is the default folder, ' + result.DefaultPath
+                            + ', which Jellyfin can normally always write to.');
+                        buttons.unshift({
+                            label: 'Use the default folder',
+                            onClick: function () {
+                                $('SlMediaRootPath').value = result.DefaultPath;
+                                saveGeneral();
+                            }
+                        });
+                    }
+
+                    showNotice('The folder for imported media cannot be used', paragraphs, buttons);
+                    return false;
+                });
+            }
+
+            function saveGeneral() {
+                Dashboard.showLoadingMsg();
+                ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                    config.MediaRootPath = $('SlMediaRootPath').value.trim();
+                    config.UnavailabilityThresholdHours = parseInt($('SlThreshold').value, 10) || 48;
+                    config.LocalApiUrl = $('SlLocalApiUrl').value.trim();
+                    return ApiClient.updatePluginConfiguration(pluginId, config);
+                }).then(function (result) {
+                    Dashboard.processPluginConfigurationUpdateResult(result);
+                    return ApiClient.getPluginConfiguration(pluginId);
+                }).then(function (config) {
+                    $('SlMediaRootPath').value = config.MediaRootPath;
+                    return checkMediaRoot();
+                }).then(loadStreamBaseUrl).then(function () {
+                    Dashboard.hideLoadingMsg();
+                }, function (error) {
+                    Dashboard.hideLoadingMsg();
+                    Dashboard.alert('Could not save: ' + describeError(error));
+                });
             }
 
             function describeServer(response) {
@@ -550,6 +643,8 @@
                     closeEditor();
                     return loadServers();
                 }).then(function () {
+                    return checkMediaRoot();
+                }).then(function () {
                     Dashboard.hideLoadingMsg();
                 }, function (error) {
                     Dashboard.hideLoadingMsg();
@@ -601,17 +696,7 @@
 
             $('SlGeneralForm').addEventListener('submit', function (event) {
                 event.preventDefault();
-                Dashboard.showLoadingMsg();
-                ApiClient.getPluginConfiguration(pluginId).then(function (config) {
-                    config.MediaRootPath = $('SlMediaRootPath').value.trim();
-                    config.UnavailabilityThresholdHours = parseInt($('SlThreshold').value, 10) || 48;
-                    config.LocalApiUrl = $('SlLocalApiUrl').value.trim();
-                    return ApiClient.updatePluginConfiguration(pluginId, config);
-                }).then(function (result) {
-                    Dashboard.processPluginConfigurationUpdateResult(result);
-                    return loadStreamBaseUrl();
-                });
-
+                saveGeneral();
                 return false;
             });
 

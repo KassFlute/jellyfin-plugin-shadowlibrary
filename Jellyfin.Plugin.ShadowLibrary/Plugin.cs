@@ -21,12 +21,18 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
         : base(applicationPaths, xmlSerializer)
     {
         Instance = this;
+        FillDefaults(Configuration);
     }
 
     /// <summary>
     /// Gets the current plugin instance.
     /// </summary>
     public static Plugin? Instance { get; private set; }
+
+    /// <summary>
+    /// Gets the media root used when none is set, in a folder Jellyfin always owns.
+    /// </summary>
+    public string DefaultMediaRootPath => Path.Combine(ApplicationPaths.ProgramDataPath, "shadowlibrary");
 
     /// <inheritdoc />
     public override string Name => "ShadowLibrary";
@@ -39,6 +45,13 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
         "Browse and stream movies and shows from other Jellyfin servers without copying any file.";
 
     /// <inheritdoc />
+    public override void UpdateConfiguration(BasePluginConfiguration configuration)
+    {
+        FillDefaults((PluginConfiguration)configuration);
+        base.UpdateConfiguration(configuration);
+    }
+
+    /// <inheritdoc />
     public IEnumerable<PluginPageInfo> GetPages()
     {
         yield return new PluginPageInfo
@@ -49,5 +62,13 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
                 "{0}.Configuration.configPage.html",
                 GetType().Namespace)
         };
+    }
+
+    private void FillDefaults(PluginConfiguration configuration)
+    {
+        if (string.IsNullOrWhiteSpace(configuration.MediaRootPath))
+        {
+            configuration.MediaRootPath = DefaultMediaRootPath;
+        }
     }
 }

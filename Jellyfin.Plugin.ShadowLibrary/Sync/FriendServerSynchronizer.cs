@@ -148,6 +148,7 @@ public class FriendServerSynchronizer
                 .ToDictionary(i => i.RemoteItemId, StringComparer.Ordinal);
         }
 
+        MediaRoot.EnsureUsable(serverFolder);
         changed |= _cleaner.EnsureMarkers(serverFolder);
 
         // done before writing anything, so the scan at the end of the cycle already covers
