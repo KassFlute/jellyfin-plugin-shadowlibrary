@@ -64,37 +64,34 @@
                     </label>
                     <input id="SlMediaRootPath" type="text" is="emby-input" />
                     <div class="fieldDescription">
-                        Where the placeholder files go. Jellyfin must be able to write there, which is
-                        checked when you save. Leave empty for the default.
+                        Where the placeholder files go. Jellyfin must be able to write there.
                     </div>
                 </div>
 
                 <div class="inputContainer">
                     <label class="emby-checkbox-label">
                         <input id="SlImportMetadata" type="checkbox" is="emby-checkbox" />
-                        <span>Use the titles and images of the friend server</span>
+                        <span>Import metadata from the friend server</span>
                     </label>
                     <details class="fieldDescription">
                         <summary style="cursor:pointer;">Which one should I choose?</summary>
-                        <p><b>On</b> (recommended). Imported media looks the way it does on your
-                            friend's server: same titles, descriptions and images, in their
-                            language. Works at once, even when a title is hard to identify.</p>
-                        <p><b>Off</b>. Only the TMDb and IMDb ids are imported. Each of your libraries
-                            then fetches titles and images itself, in its own language. Choose this
-                            when your friend's server is in another language than yours. The
-                            library must have a metadata downloader enabled. If two libraries read
-                            the same folder, keep "Nfo" unticked under metadata savers and do not
-                            save artwork into media folders, or they overwrite each other.</p>
-                        <p>Changing this takes effect at the next synchronisation. Edits you made by
-                            hand to imported media are replaced.</p>
+                        <p><b>On</b>. Imported media comes with the metadata of your friend's
+                            server, as .nfo files and images: the same titles, descriptions and
+                            posters, in the same language as their server.</p>
+                        <p><b>Off</b>. Only the TMDb and IMDb ids are imported. Your Jellyfin then
+                            fetches the rest with your own library settings. More control, less plug
+                            and play.</p>
                     </details>
                 </div>
 
                 <div class="inputContainer">
                     <label class="inputLabel inputLabelUnfocused" for="SlThreshold">
-                        Remove unreachable items after (hours)
+                        Remove items from unreachable servers after (hours)
                     </label>
                     <input id="SlThreshold" type="number" is="emby-input" min="1" step="1" />
+                    <div class="fieldDescription">
+                        Items a reachable friend server no longer has are removed at once.
+                    </div>
                 </div>
 
                 <div class="inputContainer">
@@ -163,8 +160,9 @@
                     <label class="selectLabel" for="SlShowLibrary">Add its shows to</label>
                     <select id="SlShowLibrary" is="emby-select"></select>
                     <div class="fieldDescription">
-                        Imported media lands in the libraries you already have, beside your own
-                        files. The origin tag tells them apart.
+                        Imported media placeholders land in <span id="SlRootHint"></span>, and are
+                        added to the libraries picked here, beside your own media. Only the origin
+                        tag tells them apart.
                     </div>
                 </div>
 
@@ -520,13 +518,8 @@
                 }
             }
 
-            var baseUrlSources = {
-                override: 'the address set here',
-                published: 'the published address of your Jellyfin network settings',
-                startup: 'the published address this server was started with',
-                request: 'the address you are reaching this page through',
-                local: 'the local network address of this server'
-            };
+            var urlHint = 'Playback is relayed through this server, so the plugin needs the public '
+                + 'address your clients use to reach it, to generate valid links.';
 
             function loadStreamBaseUrl() {
                 return ApiClient.ajax({
@@ -538,21 +531,14 @@
                         $('SlLocalApiUrl').value = result.Effective;
                     }
 
-                    var hint = 'Playback can be handed straight to the player, so this has to be '
-                        + 'an address your players can reach, not only this server. ';
-
-                    hint += result.Adopted
-                        ? 'Filled in with ' + result.Effective
-                            + ', the address you are reaching this page through. Change it if your '
-                            + 'players connect through another one.'
-                        : 'Generated files point at ' + result.Effective + ', from '
-                            + (baseUrlSources[result.Source] || 'this server') + '.';
+                    var hint = urlHint;
+                    if (result.Adopted) {
+                        hint += ' Filled in with the address you reached this page through.';
+                    }
 
                     $('SlLocalApiUrlHint').textContent = hint;
                 }, function () {
-                    $('SlLocalApiUrlHint').textContent =
-                        'Playback can be handed straight to the player, so this has to be an address '
-                        + 'your players can reach, not only this server.';
+                    $('SlLocalApiUrlHint').textContent = urlHint;
                 });
             }
 
@@ -614,6 +600,7 @@
                 editingLibraryIds = server ? (server.LibraryIds || []).slice() : [];
                 lastProbe = null;
 
+                $('SlRootHint').textContent = $('SlMediaRootPath').value.trim() || 'the root folder for imported media';
                 $('SlDialogTitle').textContent = server ? 'Edit ' + server.Name : 'Add a friend server';
                 $('SlName').value = server ? server.Name : '';
                 $('SlUrl').value = server ? server.Url : '';
