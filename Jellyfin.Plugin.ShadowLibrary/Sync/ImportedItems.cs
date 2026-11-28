@@ -1,4 +1,7 @@
+using System.Globalization;
+using Jellyfin.Data.Enums;
 using MediaBrowser.Controller.Entities;
+using MediaBrowser.Controller.Library;
 
 namespace Jellyfin.Plugin.ShadowLibrary.Sync;
 
@@ -35,4 +38,20 @@ public static class ImportedItems
         var path = (video.ShortcutPath ?? string.Empty).Trim().Split('?')[0];
         return Path.GetFileNameWithoutExtension(path);
     }
+
+    /// <summary>
+    /// Lists the imported items of the local libraries by plugin side identifier. One import
+    /// gives several items when its folder is declared under several mounts.
+    /// </summary>
+    /// <param name="libraryManager">Local library manager.</param>
+    /// <returns>The items.</returns>
+    public static ILookup<Guid, Video> Find(ILibraryManager libraryManager)
+        => libraryManager.GetItemList(new InternalItemsQuery
+        {
+            IncludeItemTypes = [BaseItemKind.Movie, BaseItemKind.Episode],
+            Recursive = true
+        })
+            .Where(IsImported)
+            .Cast<Video>()
+            .ToLookup(v => Guid.TryParse(KeyOf(v), CultureInfo.InvariantCulture, out var id) ? id : Guid.Empty);
 }

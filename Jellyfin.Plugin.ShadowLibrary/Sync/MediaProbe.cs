@@ -86,27 +86,19 @@ public class MediaProbe
         ProgressRange progress,
         CancellationToken cancellationToken)
     {
-        var pending = new Dictionary<string, Video>(StringComparer.Ordinal);
+        var local = ImportedItems.Find(_libraryManager);
+        var pending = new List<(string RemoteId, Video Video)>();
 
         foreach (var stored in items)
         {
-            if (stored.LocalItemId is null)
+            // none when Jellyfin has not scanned the .strm yet, the next cycle picks it up
+            foreach (var video in local[stored.Id])
             {
-                // Jellyfin has not scanned the .strm yet, it will be picked up next cycle
-                continue;
+                if (!_mediaSourceManager.GetMediaStreams(video.Id).Any(s => s.Type == MediaStreamType.Video))
+                {
+                    pending.Add((stored.RemoteItemId, video));
+                }
             }
-
-            if (_libraryManager.GetItemById(stored.LocalItemId.Value) is not Video video)
-            {
-                continue;
-            }
-
-            if (_mediaSourceManager.GetMediaStreams(video.Id).Any(s => s.Type == MediaStreamType.Video))
-            {
-                continue;
-            }
-
-            pending[stored.RemoteItemId] = video;
         }
 
         if (pending.Count == 0)
@@ -114,7 +106,7 @@ public class MediaProbe
             return 0;
         }
 
-        var remote = await GetRemoteMediaInfoAsync(server, pending.Keys.ToArray(), cancellationToken).ConfigureAwait(false);
+        var remote = await GetRemoteMediaInfoAsync(server, pending.Select(p => p.RemoteId).Distinct().ToArray(), cancellationToken).ConfigureAwait(false);
         if (remote is null)
         {
             // nothing written, the items still lack a video stream and come back next cycle
