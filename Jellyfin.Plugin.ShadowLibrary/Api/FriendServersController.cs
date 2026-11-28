@@ -256,6 +256,21 @@ public class FriendServersController : ControllerBase
     }
 
     /// <summary>
+    /// Creates the configured media root if needed and checks that Jellyfin can write to it.
+    /// </summary>
+    /// <response code="200">Result returned.</response>
+    /// <returns>What is wrong with the folder, if anything.</returns>
+    [HttpPost("MediaRoot")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public ActionResult<MediaRootResult> CheckMediaRoot()
+        => new MediaRootResult
+        {
+            Problem = MediaRoot.CheckConfigured(),
+            Path = ConfigurationStore.Current.MediaRootPath,
+            DefaultPath = Plugin.Instance?.DefaultMediaRootPath ?? string.Empty
+        };
+
+    /// <summary>
     /// Reports the address the generated .strm files point at, and fills it in from the
     /// current connection when the server offers nothing better.
     /// </summary>

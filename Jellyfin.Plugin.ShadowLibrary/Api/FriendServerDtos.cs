@@ -154,6 +154,27 @@ public class ConnectionTestRequest
 }
 
 /// <summary>
+/// Whether a folder can hold the imported media.
+/// </summary>
+public class MediaRootResult
+{
+    /// <summary>
+    /// Gets or sets what is wrong, null when the folder can be used.
+    /// </summary>
+    public string? Problem { get; set; }
+
+    /// <summary>
+    /// Gets or sets the configured folder.
+    /// </summary>
+    public string Path { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the folder used when none is set.
+    /// </summary>
+    public string DefaultPath { get; set; } = string.Empty;
+}
+
+/// <summary>
 /// What the generated .strm files point at.
 /// </summary>
 public class StreamBaseUrlResult
