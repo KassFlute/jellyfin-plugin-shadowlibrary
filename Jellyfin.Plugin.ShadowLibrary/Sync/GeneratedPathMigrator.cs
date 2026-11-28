@@ -83,6 +83,16 @@ public class GeneratedPathMigrator
             return true;
         }
 
+        if (!GeneratedContent.IsWholeServerGenerated(current))
+        {
+            _logger.LogWarning(
+                "[ShadowLibrary] {Old} also holds files that ShadowLibrary did not generate. It stays where it is and everything imported from {Name} is imported again.",
+                current,
+                server.Name);
+            _cleaner.RemoveAllForServer(server.Id);
+            return true;
+        }
+
         try
         {
             var parent = Path.GetDirectoryName(expectedFolder);
