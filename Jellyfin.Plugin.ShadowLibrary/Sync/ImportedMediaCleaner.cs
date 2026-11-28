@@ -9,6 +9,8 @@ namespace Jellyfin.Plugin.ShadowLibrary.Sync;
 /// </summary>
 public class ImportedMediaCleaner
 {
+    private const string MarkerFileName = ".shadowlibrary";
+
     private readonly ImportedItemStore _store;
     private readonly ILogger<ImportedMediaCleaner> _logger;
 
@@ -103,6 +105,57 @@ public class ImportedMediaCleaner
     }
 
     /// <summary>
+    /// Puts a file at the root of the declared folders, since Jellyfin skips an empty one and
+    /// would keep the items it last saw there.
+    /// </summary>
+    /// <param name="serverFolder">Generated folder of a friend server.</param>
+    /// <returns>True when a file was missing.</returns>
+    public bool EnsureMarkers(string serverFolder)
+    {
+        var created = false;
+
+        foreach (var name in new[] { MediaFileWriter.MoviesFolderName, MediaFileWriter.ShowsFolderName })
+        {
+            var marker = Path.Combine(serverFolder, name, MarkerFileName);
+            if (File.Exists(marker))
+            {
+                continue;
+            }
+
+            try
+            {
+                Directory.CreateDirectory(Path.Combine(serverFolder, name));
+                File.WriteAllText(marker, string.Empty);
+                created = true;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _logger.LogError(ex, "[ShadowLibrary] Could not write {File}.", marker);
+            }
+        }
+
+        return created;
+    }
+
+    /// <summary>
+    /// Removes the series of a friend server that no longer hold any imported episode.
+    /// </summary>
+    /// <param name="friendServerId">Friend server identifier.</param>
+    public void RemoveEmptySeries(Guid friendServerId)
+    {
+        var items = _store.GetByFriendServer(friendServerId);
+
+        foreach (var series in _store.GetSeriesByFriendServer(friendServerId))
+        {
+            var prefix = series.FolderPath + Path.DirectorySeparatorChar;
+            if (!items.Any(i => i.FolderPath.StartsWith(prefix, StringComparison.Ordinal)))
+            {
+                RemoveSeries(series);
+            }
+        }
+    }
+
+    /// <summary>
     /// Deletes the whole folder generated for a friend server, for an entry that is being
     /// removed. Nothing outside the media root is ever touched.
     /// </summary>
@@ -111,9 +164,7 @@ public class ImportedMediaCleaner
     {
         // an entry that never completed a cycle has no recorded folder, so fall back to the
         // one the current settings point at
-        var folder = string.IsNullOrEmpty(server.GeneratedFolderPath)
-            ? MediaFileWriter.BuildServerFolder(ConfigurationStore.Current.MediaRootPath, server)
-            : server.GeneratedFolderPath;
+        var folder = MediaFileWriter.ResolveGeneratedFolder(server);
 
         if (IsInsideMediaRoot(folder))
         {

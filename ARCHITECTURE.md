@@ -156,8 +156,9 @@ episode from the series key plus its season and episode numbers.
 
 1. An item the friend server could not identify is skipped, there is nothing to compare.
 2. An item the user already holds natively is skipped. `LocalCatalogue` reads the local
-   libraries once per run and leaves out everything under the media root, which is how a
-   previous import does not count as a local copy.
+   libraries once per run and leaves out everything under the media root or played through
+   the relay, which is how a previous import does not count as a local copy. The relay URL
+   covers a media root declared a second time under another mount.
 3. An item another friend server already provides is skipped. The first server of the run to
    claim a key keeps it. Ownership is stored on the row, in `claim_keys`, and seeded back at
    the start of the next run, so a friend server that happens to be unreachable today does not
@@ -245,7 +246,7 @@ holds the item.
 
 Two plugin instances that know each other exchange one thing, the list of items each holds
 natively. `/ShadowLibrary/native-items` returns the local movies and episodes minus
-everything in the imported item store, scoped to the calling account so a friend never learns
+everything in the imported item store or played through the relay, scoped to the calling account so a friend never learns
 about libraries their own account cannot see.
 
 This stops relaying at one hop. A server shares what it owns, never what it borrowed. The
@@ -301,6 +302,11 @@ but are only ever created through `POST /Videos/MergeVersions`, never by the sca
 folders holding the same film give two items, which is why deduplication happens before
 anything is written. Series are different, a library option merges shows spread across
 several folders.
+
+**A scan skips an empty library folder.** It logs "inaccessible or empty" and keeps the items
+it last saw there. Every generated `Movies` and `Shows` folder holds a `.shadowlibrary` file so
+removals go through. Detaching a folder does not drop its items either, so removing a friend
+server deletes the files, scans, and only then detaches.
 
 **No library scan call blocks.** `QueueLibraryScan` queues, and `ValidateMediaLibrary` queues
 too. It reads as if it scanned, but the whole body is `_taskManager.CancelIfRunningAndQueue<RefreshMediaLibraryTask>()`

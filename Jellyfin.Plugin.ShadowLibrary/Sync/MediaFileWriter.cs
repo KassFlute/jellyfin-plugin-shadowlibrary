@@ -131,6 +131,17 @@ public class MediaFileWriter
         => string.Format(CultureInfo.InvariantCulture, "ShadowLibrary: {0} ({1})", server.Name, server.Url);
 
     /// <summary>
+    /// Returns the folder a friend server was last generated in, or the one its settings point
+    /// at when no cycle recorded it.
+    /// </summary>
+    /// <param name="server">Friend server.</param>
+    /// <returns>An absolute folder path.</returns>
+    public static string ResolveGeneratedFolder(FriendServer server)
+        => string.IsNullOrEmpty(server.GeneratedFolderPath)
+            ? BuildServerFolder(ConfigurationStore.Current.MediaRootPath, server)
+            : server.GeneratedFolderPath;
+
+    /// <summary>
     /// Builds the folder name of a movie or a series, in the layout Jellyfin expects.
     /// </summary>
     /// <param name="title">Title.</param>

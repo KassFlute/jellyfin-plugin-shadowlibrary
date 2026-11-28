@@ -100,9 +100,7 @@ public class LibraryAttacher
     {
         // an entry that has not run a cycle since the paths were recorded still has folders
         // declared under the name the settings produce, so fall back to those
-        var folder = string.IsNullOrEmpty(server.GeneratedFolderPath)
-            ? MediaFileWriter.BuildServerFolder(ConfigurationStore.Current.MediaRootPath, server)
-            : server.GeneratedFolderPath;
+        var folder = MediaFileWriter.ResolveGeneratedFolder(server);
 
         var moviePath = string.IsNullOrEmpty(server.AttachedMoviePath)
             ? Path.Combine(folder, MediaFileWriter.MoviesFolderName)
