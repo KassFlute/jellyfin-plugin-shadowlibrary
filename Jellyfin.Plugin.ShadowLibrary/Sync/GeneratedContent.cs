@@ -184,15 +184,12 @@ public static partial class GeneratedContent
             && File.ReadAllText(path).Contains(ImportedItems.RelayPathMarker, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool IsGenerated(string folderPath)
-        => Directory.EnumerateFiles(folderPath, "*.nfo", Listing).Any(IsTaggedNfo)
-            || FilesUnder(folderPath).Any(IsGeneratedStrm);
-
-    private static bool IsTaggedNfo(string path)
-        => string.Equals(Path.GetExtension(path), ".nfo", StringComparison.OrdinalIgnoreCase)
-            && File.ReadAllText(path).Contains("<tag>" + MediaFileWriter.OriginTagPrefix, StringComparison.Ordinal);
-
-    private static bool HoldsOnlyGenerated(string folderPath)
+    /// <summary>
+    /// Tells whether a folder holds nothing but generated files and their sidecars.
+    /// </summary>
+    /// <param name="folderPath">Folder.</param>
+    /// <returns>True when nothing in it is the user's.</returns>
+    public static bool HoldsOnlyGenerated(string folderPath)
     {
         var names = Directory.EnumerateFiles(folderPath, "*.strm", Listing)
             .Where(IsGeneratedStrm)
@@ -228,6 +225,14 @@ public static partial class GeneratedContent
 
         return true;
     }
+
+    private static bool IsGenerated(string folderPath)
+        => Directory.EnumerateFiles(folderPath, "*.nfo", Listing).Any(IsTaggedNfo)
+            || FilesUnder(folderPath).Any(IsGeneratedStrm);
+
+    private static bool IsTaggedNfo(string path)
+        => string.Equals(Path.GetExtension(path), ".nfo", StringComparison.OrdinalIgnoreCase)
+            && File.ReadAllText(path).Contains("<tag>" + MediaFileWriter.OriginTagPrefix, StringComparison.Ordinal);
 
     private static void RemoveGeneratedFiles(string folderPath)
     {

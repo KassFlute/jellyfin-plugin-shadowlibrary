@@ -36,6 +36,7 @@ public class FriendServerSynchronizer
     private readonly ImportedMediaCleaner _cleaner;
     private readonly MediaProbe _probe;
     private readonly KeyframeImporter _keyframes;
+    private readonly MetadataRefresher _refresher;
     private readonly LibraryAttacher _attacher;
     private readonly GeneratedPathMigrator _migrator;
     private readonly ILibraryManager _libraryManager;
@@ -52,6 +53,7 @@ public class FriendServerSynchronizer
     /// <param name="cleaner">Imported media cleaner.</param>
     /// <param name="probe">Media inspector.</param>
     /// <param name="keyframes">Keyframe importer.</param>
+    /// <param name="refresher">Metadata refresher.</param>
     /// <param name="attacher">Library attacher.</param>
     /// <param name="migrator">Generated path migrator.</param>
     /// <param name="libraryManager">Local library manager.</param>
@@ -65,6 +67,7 @@ public class FriendServerSynchronizer
         ImportedMediaCleaner cleaner,
         MediaProbe probe,
         KeyframeImporter keyframes,
+        MetadataRefresher refresher,
         LibraryAttacher attacher,
         GeneratedPathMigrator migrator,
         ILibraryManager libraryManager,
@@ -78,6 +81,7 @@ public class FriendServerSynchronizer
         _cleaner = cleaner;
         _probe = probe;
         _keyframes = keyframes;
+        _refresher = refresher;
         _attacher = attacher;
         _migrator = migrator;
         _libraryManager = libraryManager;
@@ -141,6 +145,7 @@ public class FriendServerSynchronizer
         }
 
         report.Reached = true;
+        var importMetadata = ConfigurationStore.Current.ImportMetadata;
 
         var serverFolder = ResolveServerFolder(server);
         var moviesFolder = Path.Combine(serverFolder, MediaFileWriter.MoviesFolderName);
@@ -231,6 +236,22 @@ public class FriendServerSynchronizer
         // item back then. The scan has just run, so this is where the match happens, and the
         // inspection right after has the identifiers it needs.
         ResolveScannedItems(server.Id);
+
+        if (server.MetadataImported != importMetadata)
+        {
+            await _refresher
+                .QueueAsync(_store.GetByFriendServer(server.Id).Select(i => i.Id), importMetadata, cancellationToken)
+                .ConfigureAwait(false);
+            server.MetadataImported = importMetadata;
+            ConfigurationStore.Update(config =>
+            {
+                var stored = Array.Find(config.FriendServers, s => s.Id == server.Id);
+                if (stored is not null)
+                {
+                    stored.MetadataImported = importMetadata;
+                }
+            });
+        }
 
         report.Probed = await _probe
             .ProbeAsync(server, _store.GetByFriendServer(server.Id), probing, cancellationToken)

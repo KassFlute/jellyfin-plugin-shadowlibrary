@@ -30,6 +30,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<ImportedMediaCleaner>();
         serviceCollection.AddSingleton<MediaProbe>();
         serviceCollection.AddSingleton<KeyframeImporter>();
+        serviceCollection.AddSingleton<MetadataRefresher>();
         serviceCollection.AddSingleton<LibraryAttacher>();
         serviceCollection.AddSingleton<GeneratedPathMigrator>();
         serviceCollection.AddSingleton<FriendServerSynchronizer>();

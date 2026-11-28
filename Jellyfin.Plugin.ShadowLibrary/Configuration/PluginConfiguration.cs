@@ -38,6 +38,12 @@ public class PluginConfiguration : BasePluginConfiguration
     public string StreamAccessKey { get; set; } = string.Empty;
 
     /// <summary>
+    /// Gets or sets a value indicating whether the titles, descriptions and artwork come from
+    /// the friend server, rather than from the metadata providers of the local libraries.
+    /// </summary>
+    public bool ImportMetadata { get; set; } = true;
+
+    /// <summary>
     /// Gets or sets the configured friend servers.
     /// </summary>
     public FriendServer[] FriendServers { get; set; } = Array.Empty<FriendServer>();

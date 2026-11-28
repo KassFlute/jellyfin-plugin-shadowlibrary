@@ -113,6 +113,11 @@ public class FriendServer
     public DateTime? LastContactUtc { get; set; }
 
     /// <summary>
+    /// Gets or sets a value indicating whether the last cycle imported metadata and artwork.
+    /// </summary>
+    public bool MetadataImported { get; set; } = true;
+
+    /// <summary>
     /// Gets or sets the UTC timestamp of the last completed synchronisation cycle.
     /// </summary>
     public DateTime? LastSyncUtc { get; set; }
