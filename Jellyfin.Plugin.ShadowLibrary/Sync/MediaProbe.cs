@@ -239,7 +239,7 @@ public class MediaProbe
         _mediaAttachmentRepository.SaveMediaAttachments(video.Id, source.MediaAttachments ?? [], cancellationToken);
 
         // names and positions only, images would mean reading the whole file through the relay
-        _chapterManager.SaveChapters(
+        SaveChapters(
             video,
             chapters.Select(c => new ChapterInfo { StartPositionTicks = c.StartPositionTicks, Name = c.Name }).ToArray());
 
@@ -284,5 +284,24 @@ public class MediaProbe
         }
 
         return probed;
+    }
+
+    // takes a Video up to 10.11 and a BaseItem from 12.0, one binary serves both
+    private void SaveChapters(Video video, IReadOnlyList<ChapterInfo> chapters)
+    {
+        var method = Array.Find(
+            typeof(IChapterManager).GetMethods(),
+            m => m.Name == nameof(IChapterManager.SaveChapters)
+                && m.GetParameters() is { Length: 2 } parameters
+                && parameters[0].ParameterType.IsAssignableFrom(typeof(Video))
+                && parameters[1].ParameterType.IsAssignableFrom(typeof(IReadOnlyList<ChapterInfo>)));
+
+        if (method is null)
+        {
+            _logger.LogWarning("[ShadowLibrary] This Jellyfin version offers no known way to store chapters.");
+            return;
+        }
+
+        method.Invoke(_chapterManager, [video, chapters]);
     }
 }
