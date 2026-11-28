@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.1.0.0
+
+### Features
+- Support Jellyfin 12 (#36) @KassFlute
+- Point at the scheduled task after adding a friend server (#34) @KassFlute
+- Add an option not to import titles and artwork (#33) @KassFlute
+- Check the folder for imported media on save (#31) @KassFlute
+- Add a plugin image to the catalogue (#24) @KassFlute
+
+### Bug fixes
+- Stop importing collection ids from friend servers (#37) @KassFlute
+- Fill in tracks and keyframes under every mount (#35) @KassFlute
+- Show the real progress of the synchronisation task (#32) @KassFlute
+- Never touch files ShadowLibrary did not generate (#30) @KassFlute
+- Give local builds the version of build.yaml (#29) @KassFlute
+- Fix imports removed when the media root is mounted twice (#28) @KassFlute
+- Fix resume and seek hanging on remuxed imported films (#23) @KassFlute
+- Fix the slow start of every playback of an imported item (#21) @KassFlute
+- Fix the relay throttling the start of a playback (#20) @KassFlute
+
+### Documentation
+- Replace the plugin image with a plain wordmark (#39) @KassFlute
+- Reword the settings page (#38) @KassFlute
+
+### Dependencies
+- Bump release-drafter/release-drafter/autolabeler from 7.7.0 to 7.10.0 (#27) [@dependabot[bot]](https://github.com/apps/dependabot), @KassFlute
+- Bump release-drafter/release-drafter from 7.7.0 to 7.10.0 (#26) [@dependabot[bot]](https://github.com/apps/dependabot), @KassFlute
+
 ## 1.0.1.0
 
 ### Bug fixes
