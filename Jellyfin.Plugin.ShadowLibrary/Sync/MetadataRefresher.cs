@@ -2,6 +2,7 @@ using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Providers;
+using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.IO;
 using Microsoft.Extensions.Logging;
 
@@ -84,5 +85,35 @@ public class MetadataRefresher
         }
 
         _logger.LogInformation("[ShadowLibrary] Queued a metadata refresh of {Count} item(s).", targets.Count);
+    }
+
+    /// <summary>
+    /// Drops the collection id earlier versions copied from friend servers, where it is the id
+    /// of the movie itself. A real one is left to Jellyfin.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>How many items were fixed.</returns>
+    public async Task<int> DropCopiedCollectionIdsAsync(CancellationToken cancellationToken)
+    {
+        var fixedCount = 0;
+        foreach (var video in ImportedItems.Find(_libraryManager).SelectMany(g => g))
+        {
+            var collection = video.GetProviderId(MetadataProvider.TmdbCollection);
+            if (string.IsNullOrEmpty(collection) || collection != video.GetProviderId(MetadataProvider.Tmdb))
+            {
+                continue;
+            }
+
+            video.ProviderIds.Remove(MetadataProvider.TmdbCollection.ToString());
+            await video.UpdateToRepositoryAsync(ItemUpdateType.MetadataEdit, cancellationToken).ConfigureAwait(false);
+            fixedCount++;
+        }
+
+        if (fixedCount > 0)
+        {
+            _logger.LogInformation("[ShadowLibrary] Dropped the copied collection id of {Count} item(s).", fixedCount);
+        }
+
+        return fixedCount;
     }
 }

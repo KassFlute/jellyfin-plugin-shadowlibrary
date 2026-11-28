@@ -716,11 +716,15 @@ public class MediaFileWriter
     {
         builder
             .AppendJoin(',', (people ?? []).Select(p => p.Type + ':' + p.Name + ':' + p.Role)).Append('\n')
-            .AppendJoin(',', (providerIds ?? []).OrderBy(p => p.Key, StringComparer.Ordinal)
+            .AppendJoin(',', Identifying(providerIds).OrderBy(p => p.Key, StringComparer.Ordinal)
                 .Select(p => p.Key + '=' + p.Value)).Append('\n')
             .AppendJoin(',', (imageTags ?? []).OrderBy(p => p.Key, StringComparer.Ordinal)
                 .Select(p => p.Key + '=' + p.Value));
     }
+
+    // collections are the local server's business, and friend servers often carry wrong ones
+    private static IEnumerable<KeyValuePair<string, string>> Identifying(Dictionary<string, string>? providerIds)
+        => (providerIds ?? []).Where(p => !p.Key.Contains("Collection", StringComparison.OrdinalIgnoreCase));
 
     private static string Hash(StringBuilder builder)
     {
@@ -857,7 +861,7 @@ public class MediaFileWriter
 
     private static async Task WriteProviderIdsAsync(XmlWriter writer, Dictionary<string, string>? providerIds)
     {
-        foreach (var (provider, value) in providerIds ?? [])
+        foreach (var (provider, value) in Identifying(providerIds))
         {
             if (string.IsNullOrEmpty(value))
             {
