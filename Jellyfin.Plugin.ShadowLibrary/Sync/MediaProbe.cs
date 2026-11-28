@@ -77,11 +77,13 @@ public class MediaProbe
     /// </summary>
     /// <param name="server">Friend server the items come from.</param>
     /// <param name="items">Imported items to consider.</param>
+    /// <param name="progress">Progress of this step.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>How many items were filled in.</returns>
     public async Task<int> ProbeAsync(
         FriendServer server,
         IEnumerable<ImportedItem> items,
+        ProgressRange progress,
         CancellationToken cancellationToken)
     {
         var pending = new Dictionary<string, Video>(StringComparer.Ordinal);
@@ -124,6 +126,7 @@ public class MediaProbe
 
         foreach (var (remoteId, video) in pending)
         {
+            progress.Report(copied, pending.Count);
             var source = remote.TryGetValue(remoteId, out var info) ? PickSource(info) : null;
             if (source is null)
             {
@@ -142,7 +145,7 @@ public class MediaProbe
             }
         }
 
-        var probed = await ProbeLocallyAsync(fallback, cancellationToken).ConfigureAwait(false);
+        var probed = await ProbeLocallyAsync(fallback, pending.Count - fallback.Count, progress, cancellationToken).ConfigureAwait(false);
 
         if (copied + probed > 0)
         {
@@ -251,12 +254,13 @@ public class MediaProbe
         await video.UpdateToRepositoryAsync(ItemUpdateType.MetadataImport, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<int> ProbeLocallyAsync(List<Video> videos, CancellationToken cancellationToken)
+    private async Task<int> ProbeLocallyAsync(List<Video> videos, int done, ProgressRange progress, CancellationToken cancellationToken)
     {
         var probed = 0;
 
         for (var i = 0; i < videos.Count; i++)
         {
+            progress.Report(done + i, done + videos.Count);
             if (i > 0)
             {
                 await Task.Delay(FallbackPause, cancellationToken).ConfigureAwait(false);

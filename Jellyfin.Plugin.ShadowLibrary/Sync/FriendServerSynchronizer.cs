@@ -27,7 +27,7 @@ public class FriendServerSynchronizer
     /// <summary>
     /// How often the state of the scan is looked at once a first run has ended.
     /// </summary>
-    private static readonly TimeSpan ScanPollInterval = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan ScanPollInterval = TimeSpan.FromSeconds(1);
 
     private readonly FriendServerClient _client;
     private readonly FriendServerSessionProvider _sessions;
@@ -102,18 +102,26 @@ public class FriendServerSynchronizer
     /// </summary>
     /// <param name="server">Friend server.</param>
     /// <param name="local">What the local server already holds natively.</param>
+    /// <param name="progress">Progress of this friend server, from 0 to 100.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>What the cycle did.</returns>
     public async Task<SyncReport> SyncAsync(
         FriendServer server,
         LocalCatalogue local,
+        IProgress<double> progress,
         CancellationToken cancellationToken)
     {
         var report = new SyncReport();
+        var listing = new ProgressRange(progress, 0, 10);
+        var importing = new ProgressRange(progress, 10, 50);
+        var scanning = new ProgressRange(progress, 50, 85);
+        var probing = new ProgressRange(progress, 85, 92);
+        var indexing = new ProgressRange(progress, 92, 100);
+
         var known = _store.GetByFriendServer(server.Id)
             .ToDictionary(i => i.RemoteItemId, StringComparer.Ordinal);
 
-        var catalogue = await ListCatalogueAsync(server, cancellationToken).ConfigureAwait(false);
+        var catalogue = await ListCatalogueAsync(server, listing, cancellationToken).ConfigureAwait(false);
 
         if (catalogue is null)
         {
@@ -126,7 +134,7 @@ public class FriendServerSynchronizer
             {
                 _cleaner.RemoveEmptySeries(server.Id);
                 _cleaner.EnsureMarkers(MediaFileWriter.ResolveGeneratedFolder(server));
-                await ScanAsync(cancellationToken).ConfigureAwait(false);
+                await ScanAsync(scanning, cancellationToken).ConfigureAwait(false);
             }
 
             return report;
@@ -156,6 +164,14 @@ public class FriendServerSynchronizer
         var seen = new HashSet<string>(StringComparer.Ordinal);
         changed |= _attacher.Attach(server, moviesFolder, showsFolder);
 
+        var total = catalogue.Movies.Count + catalogue.Episodes.Count;
+        var handled = 0;
+        void Advance(int count)
+        {
+            handled += count;
+            importing.Report(handled, total);
+        }
+
         changed |= await SyncMoviesAsync(
             server,
             catalogue,
@@ -164,6 +180,7 @@ public class FriendServerSynchronizer
             known,
             seen,
             report,
+            Advance,
             cancellationToken).ConfigureAwait(false);
 
         changed |= await SyncSeriesAsync(
@@ -174,6 +191,7 @@ public class FriendServerSynchronizer
             known,
             seen,
             report,
+            Advance,
             cancellationToken).ConfigureAwait(false);
 
         foreach (var orphan in known.Values.Where(i => !seen.Contains(i.RemoteItemId)))
@@ -206,7 +224,7 @@ public class FriendServerSynchronizer
         {
             // awaited rather than queued, so the new items exist before the inspection below
             // and their tracks are known at the end of this cycle instead of the next one
-            await ScanAsync(cancellationToken).ConfigureAwait(false);
+            await ScanAsync(scanning, cancellationToken).ConfigureAwait(false);
         }
 
         // the files were written before the scan, so nothing could be matched to a Jellyfin
@@ -215,13 +233,13 @@ public class FriendServerSynchronizer
         ResolveScannedItems(server.Id);
 
         report.Probed = await _probe
-            .ProbeAsync(server, _store.GetByFriendServer(server.Id), cancellationToken)
+            .ProbeAsync(server, _store.GetByFriendServer(server.Id), probing, cancellationToken)
             .ConfigureAwait(false);
 
         // needs the container, which the probe above fills in. A .strm written this cycle
         // makes Jellyfin recreate its item soon, which would delete what is stored now
         report.Keyframes = await _keyframes
-            .ImportAsync(server, _store.GetByFriendServer(server.Id).Where(i => !report.WrittenItems.Contains(i.Id)), cancellationToken)
+            .ImportAsync(server, _store.GetByFriendServer(server.Id).Where(i => !report.WrittenItems.Contains(i.Id)), indexing, cancellationToken)
             .ConfigureAwait(false);
 
         _logger.LogInformation("[ShadowLibrary] Synchronised {Name}. {Report}", server.Name, report);
@@ -240,7 +258,7 @@ public class FriendServerSynchronizer
         var removed = _cleaner.RemoveAllForServer(server.Id);
 
         // Jellyfin only drops the items of a folder that is still declared and not empty
-        await ScanAsync(CancellationToken.None).ConfigureAwait(false);
+        await ScanAsync(null, CancellationToken.None).ConfigureAwait(false);
 
         // added again under the same name during the scan
         var reused = ConfigurationStore.Current.FriendServers
@@ -282,6 +300,7 @@ public class FriendServerSynchronizer
         Dictionary<string, ImportedItem> known,
         HashSet<string> seen,
         SyncReport report,
+        Action<int> advance,
         CancellationToken cancellationToken)
     {
         var changed = false;
@@ -289,6 +308,7 @@ public class FriendServerSynchronizer
         foreach (var movie in catalogue.Movies)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            advance(1);
 
             if (!LocalCatalogue.HasExternalId(movie.ProviderIds))
             {
@@ -341,6 +361,7 @@ public class FriendServerSynchronizer
         Dictionary<string, ImportedItem> known,
         HashSet<string> seen,
         SyncReport report,
+        Action<int> advance,
         CancellationToken cancellationToken)
     {
         var changed = false;
@@ -392,6 +413,8 @@ public class FriendServerSynchronizer
 
                 episodes.Add((candidate, episodeKeys));
             }
+
+            advance(all.Length - episodes.Count);
 
             if (episodes.Count == 0)
             {
@@ -447,6 +470,7 @@ public class FriendServerSynchronizer
 
             foreach (var (episode, episodeKeys) in episodes)
             {
+                advance(1);
                 seen.Add(episode.Id);
                 known.TryGetValue(episode.Id, out var existing);
 
@@ -567,7 +591,7 @@ public class FriendServerSynchronizer
         }
     }
 
-    private async Task<Catalogue?> ListCatalogueAsync(FriendServer server, CancellationToken cancellationToken)
+    private async Task<Catalogue?> ListCatalogueAsync(FriendServer server, ProgressRange progress, CancellationToken cancellationToken)
     {
         var session = await _sessions.GetAsync(server, false, cancellationToken).ConfigureAwait(false);
         if (session is null)
@@ -575,7 +599,7 @@ public class FriendServerSynchronizer
             return null;
         }
 
-        var attempt = await TryListAsync(server, session, cancellationToken).ConfigureAwait(false);
+        var attempt = await TryListAsync(server, session, progress, cancellationToken).ConfigureAwait(false);
         if (attempt is not null)
         {
             return attempt;
@@ -589,12 +613,13 @@ public class FriendServerSynchronizer
             return null;
         }
 
-        return await TryListAsync(server, refreshed, cancellationToken).ConfigureAwait(false);
+        return await TryListAsync(server, refreshed, progress, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<Catalogue?> TryListAsync(
         FriendServer server,
         FriendServerSession session,
+        ProgressRange progress,
         CancellationToken cancellationToken)
     {
         var ping = await _client
@@ -614,6 +639,7 @@ public class FriendServerSynchronizer
                 libraryIds,
                 cancellationToken).ConfigureAwait(false);
 
+            progress.Report(1, 4);
             var series = await _client.GetSeriesAsync(
                 session.Url,
                 session.AccessToken,
@@ -622,6 +648,7 @@ public class FriendServerSynchronizer
                 libraryIds,
                 cancellationToken).ConfigureAwait(false);
 
+            progress.Report(2, 4);
             var episodes = await _client.GetEpisodesAsync(
                 session.Url,
                 session.AccessToken,
@@ -630,6 +657,7 @@ public class FriendServerSynchronizer
                 libraryIds,
                 cancellationToken).ConfigureAwait(false);
 
+            progress.Report(3, 4);
             if (mode == FriendServerMode.Federated)
             {
                 var native = await _client.GetNativeItemIdsAsync(
@@ -677,7 +705,7 @@ public class FriendServerSynchronizer
     /// resolved or inspected. Running the task and waiting on its completion event is what
     /// gives the rest of the cycle something to work with.
     /// </remarks>
-    private async Task ScanAsync(CancellationToken cancellationToken)
+    private async Task ScanAsync(ProgressRange? progress, CancellationToken cancellationToken)
     {
         var worker = _taskManager.ScheduledTasks.FirstOrDefault(
             t => string.Equals(t.ScheduledTask.Key, LibraryScanTaskKey, StringComparison.Ordinal));
@@ -716,7 +744,12 @@ public class FriendServerSynchronizer
             using var budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             budget.CancelAfter(ScanTimeout);
 
-            await completed.Task.WaitAsync(budget.Token).ConfigureAwait(false);
+            while (!completed.Task.IsCompleted)
+            {
+                progress?.Report(worker.CurrentProgress ?? 0);
+                await Task.WhenAny(completed.Task, Task.Delay(ScanPollInterval, budget.Token)).ConfigureAwait(false);
+                budget.Token.ThrowIfCancellationRequested();
+            }
 
             // a scan already under way when this cycle queued its own ends first, so the state
             // is what says the queue behind it is drained rather than the first event
